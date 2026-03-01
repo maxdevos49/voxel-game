@@ -1,0 +1,12 @@
+# MacOS
+.DS_Store
+
+# VSCode
+.vscode
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# C
+**/bin
+**/obj

@@ -1,0 +1,10 @@
+-std=c11
+-Wall
+-Wextra
+-pedantic
+-Wno-gnu-zero-variadic-macro-arguments
+-Idep/glfw/3.4/include
+-Idep/glad/include
+-Idep/cglm/0.9.6/include
+-Idep/stb/include
+-Idep/m4xdev/include
