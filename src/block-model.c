@@ -91,7 +91,7 @@ static void compute_face_quad( // TODO this is trash and does not respect windin
 }
 
 static void compute_block_models(void) {
-	for (u32 i = 0; i < BLOCK_COUNT; i++) {
+	for (u32 i = 0; i < BLOCK_COUNT - 1; i++) {
 		struct BlockModel *model = &BlockModels[i];
 
 		float x0 = model->from[0] / 16.0f;
