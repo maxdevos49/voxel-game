@@ -5,9 +5,9 @@
 #include <m4xdev/logging.h>
 #include <m4xdev/performance.h>
 
-#include "graphics/graphics.h"
-#include "graphics/glerror.h"
-#include "block-model.h"
+#include "../graphics/graphics.h"
+#include "../graphics/glerror.h"
+#include "../block-model.h"
 #include "chunk.h"
 
 #define TERRAIN_AMPLITUDE (1.0f / 20.0f)

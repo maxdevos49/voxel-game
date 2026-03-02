@@ -2,12 +2,11 @@
 #define STATE_H 1
 
 #include <stdbool.h>
-
-#include "chunk.h"
 #include "camera.h"
+#include "chunks/manager.h"
 
-#define CHUNK_DIAMETER (64)
-#define CHUNK_COUNT (CHUNK_DIAMETER * CHUNK_DIAMETER)
+
+#define CHUNK_RADIUS (32)
 
 struct AppState {
 	struct {
@@ -17,7 +16,7 @@ struct AppState {
 
 	} renderer;
 
-	struct Chunk *chunks[CHUNK_COUNT];
+	struct ChunkManager *chunk_manager;
 };
 
 #endif

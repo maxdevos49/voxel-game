@@ -25,5 +25,6 @@ typedef float f32;
 typedef double f64;
 
 typedef size_t usize;
+typedef i32 err_t;
 
 #endif

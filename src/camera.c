@@ -25,9 +25,9 @@ struct Camera camera_create(float initial_aspect) {
 	self.znear = 0.01f;
 	self.zfar = 1000.0f;
 
-	self.acceleration = 10;
+	self.acceleration = 200;//TODO extract out to state.h as defines
 	self.damping = 0.2f;
-	self.maxSpeed = 30;
+	self.maxSpeed = 200;
 
 	self.aspect = initial_aspect;
 	glm_perspective(self.fov, initial_aspect, self.znear, self.zfar, self.projection);

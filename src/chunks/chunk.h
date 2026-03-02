@@ -3,8 +3,8 @@
 
 #include <m4xdev/types.h>
 
-#include "block-model.h"
-#include "graphics/graphics.h"
+#include "../block-model.h"
+#include "../graphics/graphics.h"
 
 #define CHUNK_WIDTH	 16
 #define CHUNK_HEIGHT 128
@@ -29,6 +29,8 @@ struct Chunk {
 
 i32 generate_chunk(i32 chunkX, i32 chunkZ, struct Chunk **out);
 i32 destroy_chunk(struct Chunk *chunk);
+
+// Rendering
 
 i32 mesh_chunk(
 	struct Chunk *chunk,

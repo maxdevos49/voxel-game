@@ -6,11 +6,10 @@
 #include <m4xdev/logging.h>
 
 #include "state.h"
-#include "graphics/shader.h"
-#include "graphics/texture.h"
 #include "camera.h"
 #include "block-model.h"
-#include "chunk.h"
+#include "graphics/shader.h"
+#include "graphics/texture.h"
 
 static void init(struct WindowState *window, struct AppState *app) {
 	(void)window;
@@ -21,32 +20,8 @@ static void init(struct WindowState *window, struct AppState *app) {
 	texture_init_registry();
 	blocks_init_registry();
 
-	i32 chunk_radius = CHUNK_DIAMETER / 2;
-
-	for (i32 i = 0; i < CHUNK_COUNT; i++) {
-		i32 x = (i % CHUNK_DIAMETER) - chunk_radius;
-		i32 z = (i / CHUNK_DIAMETER) - chunk_radius;
-
-		i32 err = 0;
-		if ((err = generate_chunk(x, z, &app->chunks[i])) != 0) {
-			LOG_FATAL("Failed to generate chunk!: %d\n", err);
-		}
-	}
-
-	for (i32 i = 0; i < CHUNK_COUNT; i++) {
-		struct Chunk *chunk = app->chunks[i];
-
-		struct Chunk *north_chunk = i - CHUNK_DIAMETER >= 0 ? app->chunks[i - CHUNK_DIAMETER] : NULL;
-		struct Chunk *east_chunk = i + 1 < CHUNK_COUNT ? app->chunks[i + 1] : NULL;
-		struct Chunk *south_chunk = i + CHUNK_DIAMETER < CHUNK_COUNT ? app->chunks[i + CHUNK_DIAMETER] : NULL;
-		struct Chunk *west_chunk = i - 1 >= 0 ? app->chunks[i - 1] : NULL;
-
-		// LOG_DEBUG("X: %d Z: %d", x, z);
-
-		i32 err = 0;
-		if ((err = mesh_chunk(chunk, north_chunk, east_chunk, south_chunk, west_chunk)) != 0) {
-			LOG_FATAL("Failed to mesh chunk!: %d\n", err);
-		}
+	if (chunkmanager_create(CHUNK_RADIUS, &app->chunk_manager) != 0) {
+		LOG_FATAL("Failed to create chunk manager.");
 	}
 
 	glfwSetInputMode(window->handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -54,15 +29,10 @@ static void init(struct WindowState *window, struct AppState *app) {
 
 static void destroy(struct WindowState *window, struct AppState *app) {
 	(void)window;
+	(void)app;
 	LOG_TRACE("Cleaning up Voxel Game");
 
-	for (int i = 0; i < CHUNK_COUNT; i++) {
-		struct Chunk *chunk = app->chunks[i];
-		if (chunk != NULL) {
-			destroy_chunk(chunk);
-			app->chunks[i] = NULL;
-		}
-	}
+	// TODO destroy manager
 
 	// TODO free gl texture buffers
 	// texture_destroy_registry();
@@ -125,6 +95,10 @@ static void update(struct WindowState *window, struct AppState *app) {
 	}
 
 	camera_update(&app->renderer.camera, window);
+
+	if (chunkmanager_update(app->chunk_manager, app->renderer.camera.position[0], app->renderer.camera.position[2]) != 0) {
+		LOG_FATAL("Failed to update chunks!");
+	}
 }
 
 static void render(struct WindowState *window, struct AppState *app) {
@@ -141,19 +115,8 @@ static void render(struct WindowState *window, struct AppState *app) {
 	shader_uniform_mat4(Shaders[TERRAIN_SHADER], "view", app->renderer.camera.view);
 	shader_uniform_mat4(Shaders[TERRAIN_SHADER], "projection", app->renderer.camera.projection);
 
-	for (int i = 0; i < CHUNK_COUNT; i++) {
-		struct Chunk *chunk = app->chunks[i];
-		if (chunk != NULL) {
-			mat4 model;
-			glm_mat4_identity(model);
-
-			vec3 chunk_position = {chunk->chunkX * CHUNK_WIDTH, 0, chunk->chunkZ * CHUNK_WIDTH};
-			glm_translate(model, chunk_position);
-
-			shader_uniform_mat4(Shaders[TERRAIN_SHADER], "model", model);
-
-			render_chunk(chunk);
-		}
+	if (chunkmanager_render(app->chunk_manager, app->renderer.camera.position[0], app->renderer.camera.position[2]) != 0) {
+		LOG_FATAL("Failed to render chunks!");
 	}
 }
 
