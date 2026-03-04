@@ -8,33 +8,177 @@
 #include "../graphics/graphics.h"
 #include "../graphics/glerror.h"
 #include "../block-model.h"
+
 #include "chunk.h"
 
-#define TERRAIN_AMPLITUDE (1.0f / 20.0f)
-#define TERRAIN_PEAK	  (100.0f)
+#define CHUNK_AREA	 (CHUNK_WIDTH * CHUNK_WIDTH)
+#define CHUNK_VOLUME (CHUNK_WIDTH * CHUNK_WIDTH * CHUNK_HEIGHT)
 
-i32 generate_chunk(i32 chunkX, i32 chunkZ, struct Chunk **out) {
-	if (out == NULL) {
+#define CHUNK_SECTION_COUNT	 (CHUNK_HEIGHT / CHUNK_WIDTH)
+#define CHUNK_SECTION_VOLUME (CHUNK_WIDTH * CHUNK_WIDTH * CHUNK_WIDTH)
+
+struct ChunkSection {
+	u8 data[CHUNK_SECTION_VOLUME];
+};
+
+struct Chunk {
+	i32 flags;
+	i32 x, z;
+
+	struct ChunkSection *sections[CHUNK_SECTION_COUNT];
+
+	u8 heightmap[CHUNK_AREA];
+
+	struct {
+		size_t element_count;
+		GLuint vao;
+		GLuint vbo;
+		GLuint ebo;
+	} gl;
+};
+
+static err_t chunksection_allocate(struct ChunkSection **sectionout) {
+	assert(sectionout != NULL);
+	*sectionout = NULL;
+
+	struct ChunkSection *section = malloc(sizeof(struct ChunkSection));
+	if (section == NULL) {
+		perror("malloc");
 		return -1;
 	}
+
+	memset(section, AIR_BLOCK, sizeof(*section));
+
+	*sectionout = section;
+	section = NULL;
+
+	return 0;
+}
+
+static err_t chunk_allocate(struct Chunk **chunkout) {
+	assert(chunkout != NULL);
+	*chunkout = NULL;
 
 	struct Chunk *chunk = malloc(sizeof(struct Chunk));
 	if (chunk == NULL) {
 		perror("malloc");
-		return -2;
+		return -1;
 	}
+
+	memset(chunk, 0, sizeof(*chunk));
+
+	*chunkout = chunk;
+	chunk = NULL;
+
+	return 0;
+}
+
+static void chunksection_deallocate(struct ChunkSection *section) {
+	assert(section != NULL);
+
+	free(section);
+	section = NULL;
+}
+
+static void chunk_deallocate(struct Chunk *chunk) {
+	assert(chunk != NULL);
+
+	for (int i = 0; i < CHUNK_SECTION_COUNT; i++) {
+		struct ChunkSection *section = chunk->sections[i];
+		if (chunk->sections[i] != NULL) {
+			chunksection_deallocate(section);
+			chunk->sections[i] = NULL;
+		}
+	}
+
+	free(chunk);
+	chunk = NULL;
+}
+
+static inline u64 chunksection_index(i32 blockY) {
+	assert(blockY >= 0 && blockY < CHUNK_HEIGHT);
+
+	return (u64)blockY >> 4;
+}
+
+static inline u64 chunksection_block_index(i32 blockX, i32 blockY, i32 blockZ) {
+	assert(blockX >= 0 && blockX < CHUNK_WIDTH);
+	assert(blockY >= 0 && blockY < CHUNK_HEIGHT);
+	assert(blockZ >= 0 && blockZ < CHUNK_WIDTH);
+
+	i32 sectionY = blockY & 15;
+	return ((u64)sectionY << 8) | ((u64)blockZ << 4) | (u64)blockX;
+}
+
+static inline void chunk_update_heightmap(struct Chunk *chunk, i32 blockX, i32 blockY, i32 blockZ) {
+	assert(chunk != NULL);
+	assert(blockX >= 0 && blockX < CHUNK_WIDTH);
+	assert(blockY >= 0 && blockY < CHUNK_HEIGHT);
+	assert(blockZ >= 0 && blockZ < CHUNK_WIDTH);
+
+	u64 heightmap_index = ((u64)blockZ << 4) | (u64)blockX;
+
+	if (chunk->heightmap[heightmap_index] < blockY) {
+		chunk->heightmap[heightmap_index] = blockY;
+	}
+}
+
+static err_t chunk_put_block(struct Chunk *chunk, i32 blockX, i32 blockY, i32 blockZ, u8 block) {
+	assert(chunk != NULL);
+	assert(blockX >= 0 && blockX < CHUNK_WIDTH);
+	assert(blockY >= 0 && blockY < CHUNK_HEIGHT);
+	assert(blockZ >= 0 && blockZ < CHUNK_HEIGHT);
+
+	u64 section_index = chunksection_index(blockY);
+	struct ChunkSection *section = chunk->sections[section_index];
+	if (section == NULL && block == AIR_BLOCK) {
+		return 0;
+	} else if (section == NULL) {
+		if (chunksection_allocate(&section) != 0) {
+			return -1;
+		}
+
+		chunk->sections[section_index] = section;
+	}
+	assert(chunk->sections[section_index] != NULL);
+
+	u64 block_index = chunksection_block_index(blockX, blockY & 15, blockZ);
+
+	u8 old_block = section->data[block_index];
+	if (old_block != block) {
+		section->data[block_index] = block;
+		chunk_update_heightmap(chunk, blockX, blockY, blockZ);
+		chunk_set_flag(chunk, (CHUNK_DIRTY_FLAG | CHUNK_MESH_FLAG));
+	}
+
+	return 0;
+}
+
+static u8 chunk_get_block(struct Chunk *chunk, i32 blockX, i32 blockY, i32 blockZ) {
+	assert(chunk != NULL);
+	assert(blockX >= 0 && blockX < CHUNK_WIDTH);
+	assert(blockY >= 0 && blockY < CHUNK_HEIGHT);
+	assert(blockZ >= 0 && blockZ < CHUNK_HEIGHT);
+
+	u64 section_index = chunksection_index(blockY);
+	struct ChunkSection *section = chunk->sections[section_index];
+	if (section == NULL) return AIR_BLOCK;
+
+	u64 block_index = chunksection_block_index(blockX, blockY, blockZ);
+	return section->data[block_index];
+}
+
+err_t chunk_generate(i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
+	assert(chunkout != NULL);
+	*chunkout = NULL;
 
 	struct Perf p = {0};
 	perf_start(&p);
 
-	chunk->chunkX = chunkX;
-	chunk->chunkZ = chunkZ;
-
-	chunk->gl.vao = 0;
-	chunk->gl.vbo = 0;
-	chunk->gl.ebo = 0;
-
-	// srand(time(NULL)); // Seed for predictability
+	struct Chunk *chunk = NULL;
+	if (chunk_allocate(&chunk) != 0) {
+		return -1;
+	}
 
 	for (i32 x = 0; x < CHUNK_WIDTH; x++) {
 		for (i32 z = 0; z < CHUNK_WIDTH; z++) {
@@ -46,35 +190,28 @@ i32 generate_chunk(i32 chunkX, i32 chunkZ, struct Chunk **out) {
 			i32 elevation = (i32)((noise * 0.5f + 0.5f) * TERRAIN_PEAK);
 
 			for (i32 y = 0; y < CHUNK_HEIGHT; y++) {
-				u32 index = CHUNK_BLOCK_INDEX(x, y, z);
 				if (y > elevation) {
-					chunk->data[index] = AIR_BLOCK;
+					chunk_put_block(chunk, x, y, z, AIR_BLOCK);
 				} else if (y == elevation) {
-					chunk->data[index] = GRASS_BLOCK;
+					chunk_put_block(chunk, x, y, z, GRASS_BLOCK);
 				} else if (elevation - y < 6) {
-					chunk->data[index] = DIRT_BLOCK;
+					chunk_put_block(chunk, x, y, z, DIRT_BLOCK);
 				} else {
-					chunk->data[index] = STONE_BLOCK;
+					chunk_put_block(chunk, x, y, z, STONE_BLOCK);
 				}
-
-				// int type = rand() % BLOCK_COUNT;
-
-				// u32 index = CHUNK_INDEX(x, y, z);
-				// chunk->data[index] = type;
 			}
 		}
 	}
 
-	perf_report(&p, "Chunk Generation");
+	*chunkout = chunk;
+	chunk = NULL;
 
-	*out = chunk;
+	perf_report(&p, "Chunk Generation");
 	return 0;
 }
 
-i32 destroy_chunk(struct Chunk *chunk) {
-	if (chunk == NULL) {
-		return -1;
-	}
+void chunk_destroy(struct Chunk *chunk) {
+	assert(chunk != NULL);
 
 	if (chunk->gl.vao != 0) {
 		GL_CALL(glDeleteBuffers(1, &chunk->gl.ebo));
@@ -87,10 +224,26 @@ i32 destroy_chunk(struct Chunk *chunk) {
 		chunk->gl.vao = 0;
 	}
 
-	free(chunk);
+	chunk_deallocate(chunk);
 	chunk = NULL;
+}
 
-	return 0;
+void chunk_set_flag(struct Chunk *chunk, i32 flag) {
+	assert(chunk != NULL);
+
+	chunk->flags |= flag;
+}
+
+void chunk_unset_flag(struct Chunk *chunk, i32 flag) {
+	assert(chunk != NULL);
+
+	chunk->flags &= ~flag;
+}
+
+bool chunk_get_flag(struct Chunk *chunk, i32 flag) {
+	assert(chunk != NULL);
+
+	return chunk->flags & flag;
 }
 
 // Worst case face exposure in a chunk is a alternating checkerboard pattern
@@ -177,7 +330,7 @@ i32 mesh_chunk(
 	for (i32 x = 0; x < CHUNK_WIDTH; x++) {
 		for (i32 z = 0; z < CHUNK_WIDTH; z++) {
 			for (i32 y = 0; y < CHUNK_HEIGHT; y++) {
-				enum BlockType target = chunk->data[CHUNK_BLOCK_INDEX(x, y, z)];
+				enum BlockType target = chunk_get_block(chunk, x, y, z);
 
 				if (target != AIR_BLOCK) {
 					// Target Block: Bottom Face - Bottom of world
@@ -191,22 +344,22 @@ i32 mesh_chunk(
 					}
 
 					// Target Block: South Face - exposed to south chunk
-					if (z == (CHUNK_WIDTH - 1) && south_chunk && south_chunk->data[CHUNK_BLOCK_INDEX(x, y, 0)] == AIR_BLOCK) {
+					if (z == (CHUNK_WIDTH - 1) && south_chunk && chunk_get_block(south_chunk, x, y, 0) == AIR_BLOCK) {
 						push_face(x, y, z, target, SOUTH_FACE, &chunk_mesh);
 					}
 
 					// Target Block: East Face - exposed to east chunk
-					if (x == (CHUNK_WIDTH - 1) && east_chunk && east_chunk->data[CHUNK_BLOCK_INDEX(0, y, z)] == AIR_BLOCK) {
+					if (x == (CHUNK_WIDTH - 1) && east_chunk && chunk_get_block(east_chunk, 0, y, z) == AIR_BLOCK) {
 						push_face(x, y, z, target, EAST_FACE, &chunk_mesh);
 					}
 
 					// Target Block: North Face - exposed to north chunk
-					if (z == 0 && north_chunk && north_chunk->data[CHUNK_BLOCK_INDEX(x, y, CHUNK_WIDTH - 1)] == AIR_BLOCK) {
+					if (z == 0 && north_chunk && chunk_get_block(north_chunk, x, y, CHUNK_WIDTH - 1) == AIR_BLOCK) {
 						push_face(x, y, z, target, NORTH_FACE, &chunk_mesh);
 					}
 
 					// Target Block: West Face - exposed to west chunk
-					if (x == 0 && west_chunk && west_chunk->data[CHUNK_BLOCK_INDEX(CHUNK_WIDTH - 1, y, z)] == AIR_BLOCK) {
+					if (x == 0 && west_chunk && chunk_get_block(west_chunk, CHUNK_WIDTH - 1, y, z) == AIR_BLOCK) {
 						push_face(x, y, z, target, WEST_FACE, &chunk_mesh);
 					}
 
@@ -215,7 +368,7 @@ i32 mesh_chunk(
 
 				// Bottom Block: Top Face
 				if (y - 1 >= 0) {
-					enum BlockType bottom = chunk->data[CHUNK_BLOCK_INDEX(x, y - 1, z)];
+					enum BlockType bottom = chunk_get_block(chunk, x, y - 1, z);
 					if (bottom != AIR_BLOCK) {
 						push_face(x, y - 1, z, bottom, TOP_FACE, &chunk_mesh);
 					}
@@ -223,7 +376,7 @@ i32 mesh_chunk(
 
 				// Top Block: Bottom Face
 				if (y + 1 < CHUNK_HEIGHT) {
-					enum BlockType top = chunk->data[CHUNK_BLOCK_INDEX(x, y + 1, z)];
+					enum BlockType top = chunk_get_block(chunk, x, y + 1, z);
 					if (top != AIR_BLOCK) {
 						push_face(x, y + 1, z, top, BOTTOM_FACE, &chunk_mesh);
 					}
@@ -231,7 +384,7 @@ i32 mesh_chunk(
 
 				// North Block: South Face
 				if (z - 1 >= 0) {
-					enum BlockType north = chunk->data[CHUNK_BLOCK_INDEX(x, y, z - 1)];
+					enum BlockType north = chunk_get_block(chunk, x, y, z - 1);
 					if (north != AIR_BLOCK) {
 						push_face(x, y, z - 1, north, SOUTH_FACE, &chunk_mesh);
 					}
@@ -239,7 +392,7 @@ i32 mesh_chunk(
 
 				// East Block: West Face
 				if (x + 1 < CHUNK_WIDTH) {
-					enum BlockType east = chunk->data[CHUNK_BLOCK_INDEX(x + 1, y, z)];
+					enum BlockType east = chunk_get_block(chunk, x + 1, y, z);
 					if (east != AIR_BLOCK) {
 						push_face(x + 1, y, z, east, WEST_FACE, &chunk_mesh);
 					}
@@ -247,7 +400,7 @@ i32 mesh_chunk(
 
 				// South Block: North Face
 				if (z + 1 < CHUNK_WIDTH) {
-					enum BlockType south = chunk->data[CHUNK_BLOCK_INDEX(x, y, z + 1)];
+					enum BlockType south = chunk_get_block(chunk, x, y, z + 1);
 					if (south != AIR_BLOCK) {
 						push_face(x, y, z + 1, south, NORTH_FACE, &chunk_mesh);
 					}
@@ -255,7 +408,7 @@ i32 mesh_chunk(
 
 				// West Block: East Face
 				if (x - 1 >= 0) {
-					enum BlockType west_block = chunk->data[CHUNK_BLOCK_INDEX(x - 1, y, z)];
+					enum BlockType west_block = chunk_get_block(chunk, x - 1, y, z);
 					if (west_block != AIR_BLOCK) {
 						push_face(x - 1, y, z, west_block, EAST_FACE, &chunk_mesh);
 					}
@@ -303,16 +456,17 @@ i32 mesh_chunk(
 
 	GL_CALL(glBindVertexArray(0));
 
+	chunk_unset_flag(chunk, CHUNK_MESH_FLAG);
+	chunk_set_flag(chunk, CHUNK_RENDERABLE_FLAG);
+
 	perf_report(&p, "Chunk Meshing");
 	return 0;
 }
 
-i32 render_chunk(const struct Chunk *chunk) {
-	if (chunk == NULL) {
-		return -1;
-	}
+i32 render_chunk(struct Chunk *chunk) {
+	assert(chunk != NULL);
 
-	if (chunk->gl.vao == 0) {
+	if (!chunk_get_flag(chunk, CHUNK_RENDERABLE_FLAG)) {
 		return -1;
 	}
 

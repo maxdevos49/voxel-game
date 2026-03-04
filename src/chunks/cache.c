@@ -123,6 +123,7 @@ static inline void attach_head_node(struct ChunkCache *cache, struct ChunkNode *
 
 static inline bool get_node_index(struct ChunkCache *cache, i32 chunkX, i32 chunkZ, u64 *indexout) {
 	assert(cache != NULL);
+	assert(indexout != NULL);
 
 	u64 preferred_index = hash_key(chunkX, chunkZ, cache->capacity);
 	u64 index = preferred_index;
@@ -143,72 +144,61 @@ static inline bool get_node_index(struct ChunkCache *cache, i32 chunkX, i32 chun
 	return false;
 }
 
-err_t chunkcache_get(struct ChunkCache *cache, i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
-	if (cache == NULL) return -1;
-	if (chunkout == NULL) return -1;
-
-	*chunkout = NULL;
+struct Chunk *chunkcache_get(struct ChunkCache *cache, i32 chunkX, i32 chunkZ) {
+	assert(cache != NULL);
 
 	u64 index = 0;
 	if (!get_node_index(cache, chunkX, chunkZ, &index)) {
-		return 0;
+		return NULL;
 	}
 
+	assert(index >= 0 && index < cache->capacity);
 	struct ChunkNode *node = &cache->data[index];
-	assert(node != NULL);
 
 	detach_node(cache, node);
 	attach_head_node(cache, node);
 
-	*chunkout = node->data;
-
-	return 0;
+	return node->data;
 }
 
-err_t chunkcache_remove(struct ChunkCache *cache, i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
-	if (cache == NULL) return -1;
-	if (chunkout == NULL) return -1;
-
-	*chunkout = NULL;
+struct Chunk *chunkcache_remove(struct ChunkCache *cache, i32 chunkX, i32 chunkZ) {
+	assert(cache != NULL);
 
 	u64 index = 0;
 	if (!get_node_index(cache, chunkX, chunkZ, &index)) {
-		return 0;
+		return NULL;
 	}
 
 	struct ChunkNode *node = &cache->data[index];
-	assert(node != NULL);
-
-	*chunkout = node->data;
+	struct Chunk *chunk = node->data;
 
 	detach_node(cache, node);
-
 	u64 next_index = (index + 1) & (cache->capacity - 1);
+	assert(next_index >= 0 && next_index < cache->capacity);
 	node->state = cache->data[next_index].state == HM_FREE ? HM_FREE : HM_TOMBSTONE;
-
 	node->key = (struct ChunkKey){0};
 	node->data = NULL;
 
 	cache->size--;
 
-	return 0;
+	return chunk;
 }
 
-err_t chunkcache_add(struct ChunkCache *cache, i32 chunkX, i32 chunkZ, struct Chunk *chunkin, struct Chunk **evictedout) {
-	if (cache == NULL) return -1;
-	if (chunkin == NULL) return -1;
-	if (evictedout == NULL) return -1;
-
-	*evictedout = NULL;
+struct Chunk *chunkcache_add(struct ChunkCache *cache, i32 chunkX, i32 chunkZ, struct Chunk *chunkin) {
+	assert(cache != NULL);
+	assert(chunkin != NULL);
 
 	u64 existing_index = 0;
 	if (get_node_index(cache, chunkX, chunkZ, &existing_index)) {
-		return -2; // Cache entry already exists.
+		return NULL; // Cache entry already exists.
 	}
 
+	assert(existing_index >= 0 && existing_index < cache->capacity);
+
+	struct Chunk *evicted = NULL;
 	if (cache->size + 1 > cache->capacity) {
 		assert(cache->tail != NULL);
-		chunkcache_remove(cache, cache->tail->key.x, cache->tail->key.z, evictedout);
+		evicted = chunkcache_remove(cache, cache->tail->key.x, cache->tail->key.z);
 	}
 
 	u64 preferred_index = hash_key(chunkX, chunkZ, cache->capacity);
@@ -216,12 +206,15 @@ err_t chunkcache_add(struct ChunkCache *cache, i32 chunkX, i32 chunkZ, struct Ch
 
 	struct ChunkNode *node = NULL;
 	do {
+		assert(index >= 0 && index < cache->capacity);
+
 		node = &cache->data[index];
 		if (node->state == HM_FREE || node->state == HM_TOMBSTONE) break;
 
 		index++;
 		index &= (cache->capacity - 1);
 	} while (index != preferred_index);
+
 	assert(node != NULL);
 
 	node->state = HM_OCCUPIED;
@@ -232,5 +225,5 @@ err_t chunkcache_add(struct ChunkCache *cache, i32 chunkX, i32 chunkZ, struct Ch
 
 	cache->size++;
 
-	return 0;
+	return evicted;
 }

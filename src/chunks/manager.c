@@ -65,51 +65,54 @@ static inline struct ChunkCoord chunkcoord_from_blockpos(double blockX, double b
 err_t chunkmanager_update(struct ChunkManager *manager, double blockX, double blockZ) {
 	if (manager == NULL) return -1;
 
-	size_t generate_limit = 100; // TODO move out to a define(state.h?)
-	size_t mesh_limit = 100; // TODO move out to a define(state.h?)
+	size_t generate_limit = 5; // TODO move out to a define(state.h?)
+	size_t mesh_limit = 5;	   // TODO move out to a define(state.h?)
 
 	struct ChunkCoord origin = chunkcoord_from_blockpos(blockX, blockZ);
 	struct ChunkIterator it = chunkiterator_create(origin, manager->radius);
 
 	struct ChunkCoord coord;
 	while (chunkiterator_next(&it, &coord) == 0) {
-		struct Chunk *chunk = NULL;
-		if (chunkcache_get(manager->cache, coord.x, coord.z, &chunk) != 0) {
-			return -2;
-		}
-
+		struct Chunk *chunk = chunkcache_get(manager->cache, coord.x, coord.z);
 		if (chunk == NULL) {
 			if (generate_limit > 0) {
 				LOG_DEBUG("Generating Chunk X: %d Z: %d", coord.x, coord.z);
 
-				if (generate_chunk(coord.x, coord.z, &chunk) != 0) {
+				if (chunk_generate(coord.x, coord.z, &chunk) != 0) {
 					return -3;
 				}
 
-				struct Chunk *evicted = NULL;
-				if (chunkcache_add(manager->cache, coord.x, coord.z, chunk, &evicted) != 0) {
-					return -3;
-				}
-
+				struct Chunk *evicted = chunkcache_add(manager->cache, coord.x, coord.z, chunk);
 				if (evicted != NULL) {
-					destroy_chunk(evicted);
+					chunk_destroy(evicted);
 					evicted = NULL;
 				}
 
-				// TODO mark neighbors dirty/remesh
+				struct Chunk *north = chunkcache_get(manager->cache, coord.x, coord.z - 1);
+				if (north != NULL) chunk_set_flag(north, CHUNK_MESH_FLAG);
+
+				struct Chunk *east = chunkcache_get(manager->cache, coord.x + 1, coord.z);
+				if (east != NULL) chunk_set_flag(east, CHUNK_MESH_FLAG);
+
+				struct Chunk *south = chunkcache_get(manager->cache, coord.x, coord.z + 1);
+				if (south != NULL) chunk_set_flag(south, CHUNK_MESH_FLAG);
+
+				struct Chunk *west = chunkcache_get(manager->cache, coord.x - 1, coord.z);
+				if (west != NULL) chunk_set_flag(west, CHUNK_MESH_FLAG);
 
 				generate_limit--;
 			}
 		} else {
-			if (chunk->gl.vao == 0 && mesh_limit > 0) {
-				struct Chunk *north_chunk = NULL; // TODO fetch surrounding chunks for meshing.
-				struct Chunk *east_chunk = NULL;
-				struct Chunk *south_chunk = NULL;
-				struct Chunk *west_chunk = NULL;
+			if (chunk_get_flag(chunk, CHUNK_MESH_FLAG) && mesh_limit > 0) {
+				struct Chunk *north = chunkcache_get(manager->cache, coord.x, coord.z - 1);
+				struct Chunk *east = chunkcache_get(manager->cache, coord.x + 1, coord.z);
+				struct Chunk *south = chunkcache_get(manager->cache, coord.x, coord.z + 1);
+				struct Chunk *west = chunkcache_get(manager->cache, coord.x - 1, coord.z);
 
-				if (mesh_chunk(chunk, north_chunk, east_chunk, south_chunk, west_chunk) != 0) {
+				if (mesh_chunk(chunk, north, east, south, west) != 0) {
 					return -4;
 				}
+
 				mesh_limit--;
 			}
 		}
@@ -126,21 +129,15 @@ err_t chunkmanager_render(struct ChunkManager *manager, double blockX, double bl
 	struct ChunkCoord coord;
 	struct ChunkIterator it = chunkiterator_create(origin, manager->radius);
 	while (chunkiterator_next(&it, &coord) == 0) {
-		struct Chunk *chunk = NULL;
-		if (chunkcache_get(manager->cache, coord.x, coord.z, &chunk) != 0) {
-			return -2;
-		}
-
-		if (chunk == NULL || chunk->gl.vao == 0) {
+		struct Chunk *chunk = chunkcache_get(manager->cache, coord.x, coord.z);
+		if (chunk == NULL || !chunk_get_flag(chunk, CHUNK_RENDERABLE_FLAG)) {
 			continue;
 		}
-
-		// LOG_DEBUG("Rendering Chunk X: %d Z: %d", coord.x, coord.z);
 
 		mat4 model;
 		glm_mat4_identity(model);
 
-		vec3 chunk_position = {chunk->chunkX * CHUNK_WIDTH, 0, chunk->chunkZ * CHUNK_WIDTH};
+		vec3 chunk_position = {coord.x * CHUNK_WIDTH, 0, coord.z * CHUNK_WIDTH};
 		glm_translate(model, chunk_position);
 
 		shader_uniform_mat4(Shaders[TERRAIN_SHADER], "model", model);

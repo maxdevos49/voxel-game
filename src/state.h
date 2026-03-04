@@ -6,7 +6,7 @@
 #include "chunks/manager.h"
 
 
-#define CHUNK_RADIUS (32)
+#define CHUNK_RADIUS (16)
 
 struct AppState {
 	struct {

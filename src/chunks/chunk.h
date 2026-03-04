@@ -3,34 +3,29 @@
 
 #include <m4xdev/types.h>
 
-#include "../block-model.h"
-#include "../graphics/graphics.h"
+// ===========================
+// CHUNK CONSTANTS/TYPES
+// ===========================
 
 #define CHUNK_WIDTH	 16
 #define CHUNK_HEIGHT 128
-#define CHUNK_VOLUME (CHUNK_WIDTH * CHUNK_WIDTH * CHUNK_HEIGHT)
 
-#define CHUNK_BLOCK_INDEX(x, y, z) ((y) + CHUNK_HEIGHT * ((z) + CHUNK_WIDTH * (x)))
+#define CHUNK_DIRTY_FLAG	  (1 << 0) /* Chunk is not saved to disk */
+#define CHUNK_MESH_FLAG		  (1 << 1) /* Chunk needs reprocessed or meshed */
+#define CHUNK_RENDERABLE_FLAG (1 << 2) /* Chunk can be rendered */
 
-struct Chunk {
-	i32 chunkX, chunkZ;
+struct Chunk;
 
-	struct {
-		GLuint vao;
-		GLuint vbo;
-		GLuint ebo;
+err_t chunk_generate(i32 chunkX, i32 chunkZ, struct Chunk **chunkout);
+void chunk_destroy(struct Chunk *chunk);
 
-		size_t element_count; // Can vertex count be derived from this? I think yes?
+void chunk_set_flag(struct Chunk *chunk, i32 flag);
+void chunk_unset_flag(struct Chunk *chunk, i32 flag);
+bool chunk_get_flag(struct Chunk *chunk, i32 flag);
 
-	} gl;
-
-	enum BlockType data[CHUNK_VOLUME];
-};
-
-i32 generate_chunk(i32 chunkX, i32 chunkZ, struct Chunk **out);
-i32 destroy_chunk(struct Chunk *chunk);
-
-// Rendering
+// ===========================
+// CHUNK RENDERING
+// ===========================
 
 i32 mesh_chunk(
 	struct Chunk *chunk,
@@ -38,6 +33,13 @@ i32 mesh_chunk(
 	struct Chunk *east_chunk,
 	struct Chunk *south_chunk,
 	struct Chunk *west_chunk);
-i32 render_chunk(const struct Chunk *chunk);
+i32 render_chunk(struct Chunk *chunk);
+
+// ===========================
+// TERRAIN GENERATION
+// ===========================
+
+#define TERRAIN_AMPLITUDE (1.0f / 20.0f)
+#define TERRAIN_PEAK	  (100.0f)
 
 #endif
