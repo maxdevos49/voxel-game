@@ -5,3 +5,6 @@
 - Palette-compression: 
 	- https://www.longor.net/articles/voxel-palette-compression-reddit
 	- https://voxel.wiki/wiki/palette-compression/
+- Texture2DArray: 
+	- https://wikis.khronos.org/opengl/Array_Texture
+	- http://gaarlicbread.com/post/gl_2d_array

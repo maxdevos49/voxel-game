@@ -5,11 +5,12 @@
 #include <m4xdev/types.h>
 #include <m4xdev/logging.h>
 
+#include "chunks/world.h"
+#include "graphics/texture-atlas.h"
 #include "state.h"
 #include "camera.h"
 #include "block-model.h"
 #include "graphics/shader.h"
-#include "graphics/texture.h"
 
 static void init(struct WindowState *window, struct AppState *app) {
 	(void)window;
@@ -17,25 +18,33 @@ static void init(struct WindowState *window, struct AppState *app) {
 	LOG_TRACE("Initializing Voxel Game");
 
 	shader_init_registry();
-	texture_init_registry();
 	blocks_init_registry();
 
-	if (chunkmanager_create(CHUNK_RADIUS, &app->chunk_manager) != 0) {
-		LOG_FATAL("Failed to create chunk manager.");
+	if (textureatlas_create(0, "resources/textures/blocks.png", 16, 16, 6, &app->tile_atlas) != 0) {
+		LOG_FATAL("Failed to load atlas!");
 	}
+
+	if (world_create(CHUNK_RADIUS, &app->world) != 0) {
+		LOG_FATAL("Failed to create world manager.");
+	}
+
+	world_preload(app->world, 0, 0);
+
+	glEnable(GL_MULTISAMPLE);
+	glEnable(GL_CULL_FACE);
+	glEnable(GL_DEPTH_TEST);
 
 	glfwSetInputMode(window->handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
 static void destroy(struct WindowState *window, struct AppState *app) {
 	(void)window;
-	(void)app;
 	LOG_TRACE("Cleaning up Voxel Game");
 
-	// TODO destroy manager
+	world_destroy(app->world);
+	app->world = NULL;
 
-	// TODO free gl texture buffers
-	// texture_destroy_registry();
+	textureatlas_destroy(&app->tile_atlas);
 	shader_destroy_registry();
 }
 
@@ -82,42 +91,45 @@ static void update(struct WindowState *window, struct AppState *app) {
 		}
 	}
 
-	static bool faceCulling = false;
 	if (window->keyboard[GLFW_KEY_T] == BUTTON_DOWN) {
 		LOG_DEBUG("Toggling Face culling");
 
-		faceCulling = !faceCulling;
-		if (faceCulling) {
+		app->renderer.facecull = !app->renderer.facecull;
+		if (app->renderer.facecull) {
 			glEnable(GL_CULL_FACE);
 		} else {
 			glDisable(GL_CULL_FACE);
 		}
 	}
 
+	if (window->keyboard[GLFW_KEY_Y] == BUTTON_DOWN) {
+		LOG_DEBUG("Toggling antialiasing");
+
+		app->renderer.antialias = !app->renderer.antialias;
+		if (app->renderer.antialias) {
+			glEnable(GL_MULTISAMPLE);
+		} else {
+			glDisable(GL_MULTISAMPLE);
+		}
+	}
+
 	camera_update(&app->renderer.camera, window);
 
-	if (chunkmanager_update(app->chunk_manager, app->renderer.camera.position[0], app->renderer.camera.position[2]) != 0) {
-		LOG_FATAL("Failed to update chunks!");
-	}
+	world_update(app->world, app->renderer.camera.position[0], app->renderer.camera.position[2]);
 }
 
 static void render(struct WindowState *window, struct AppState *app) {
 	(void)window;
-	// TODO move out?
-	glEnable(GL_DEPTH_TEST);
-
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// Shader must be bound to update uniform
 	shader_bind(Shaders[TERRAIN_SHADER]);
-	texture_bind(Textures[TERRAIN_TEXTURE]);
+	textureatlas_bind(&app->tile_atlas);
 
 	shader_uniform_mat4(Shaders[TERRAIN_SHADER], "view", app->renderer.camera.view);
 	shader_uniform_mat4(Shaders[TERRAIN_SHADER], "projection", app->renderer.camera.projection);
 
-	if (chunkmanager_render(app->chunk_manager, app->renderer.camera.position[0], app->renderer.camera.position[2]) != 0) {
-		LOG_FATAL("Failed to render chunks!");
-	}
+	world_render(app->world, app->renderer.camera.position[0], app->renderer.camera.position[2]);
 }
 
 int main(void) {
@@ -126,7 +138,7 @@ int main(void) {
 	float aspect = (float)width / (float)height;
 
 	struct WindowConfig config = {
-		.title = "Voxel Game",
+		.title = "Unnamed Voxel Game",
 		.size = {
 			.width = width,
 			.height = height},
@@ -140,6 +152,8 @@ int main(void) {
 		.renderer = {
 			.wireframe = false,
 			.vsync = true,
+			.facecull = true,
+			.antialias = true,
 			.camera = camera_create(aspect)}};
 
 	window_create(config, &state);

@@ -1,10 +1,8 @@
 #include <m4xdev/types.h>
-#include <stdio.h>
 
 #include "iterator.h"
-#include "manager.h"
 
-struct ChunkIterator chunkiterator_create(struct ChunkCoord origin, u16 radius) {
+struct ChunkIterator chunkiterator_create(struct ChunkPos origin, u16 radius) {
 	struct ChunkIterator it;
 
 	it.radius = radius;
@@ -40,9 +38,9 @@ static inline void iterator_process(struct ChunkIterator *it) {
 	it->index++;
 }
 
-err_t chunkiterator_next(struct ChunkIterator *it, struct ChunkCoord *nextout) {
-	if (it == NULL) return -1;
-	if (nextout == NULL) return -1;
+bool chunkiterator_next(struct ChunkIterator *it, struct ChunkPos *nextout) {
+	assert(it != NULL);
+	assert(nextout != NULL);
 
 	i32 r = (i32)it->radius;
 
@@ -52,18 +50,18 @@ err_t chunkiterator_next(struct ChunkIterator *it, struct ChunkCoord *nextout) {
 
 		if (x >= -r && x <= r &&
 			z >= -r && z <= r) {
-			struct ChunkCoord coord;
-			coord.x = it->origin.x + x;
-			coord.z = it->origin.z + z;
+			struct ChunkPos pos;
+			pos.x = it->origin.x + x;
+			pos.z = it->origin.z + z;
 
-			*nextout = coord;
+			*nextout = pos;
 
 			iterator_process(it);
-			return 0;
+			return true;
 		}
 
 		iterator_process(it);
 	}
 
-	return 1;// Done
+	return false; // Done
 }

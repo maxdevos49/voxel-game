@@ -153,8 +153,6 @@ void shader_uniform_mat4(struct ShaderProgram program, const char *name, mat4 tr
 	assert(program.id != 0);
 	assert(name != NULL);
 
-	// TODO cache uniform locations for shaders somehow. Maybe I add all uniform
-	// locations to a registry just like the shaders.
 	GLint location = 0;
 	GL_CALL(location = glGetUniformLocation(program.id, name));
 	assert(location != -1); // Unknown uniform check.

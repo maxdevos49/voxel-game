@@ -2,11 +2,12 @@
 #define CHUNK_ITERATOR
 
 #include <m4xdev/types.h>
-#include "manager.h"
+
+#include "chunk.h"
 
 struct ChunkIterator {
 	u16 radius;
-	struct ChunkCoord origin;
+	struct ChunkPos origin;
 
 	i32 x, z;
 	i32 dx, dz;
@@ -15,7 +16,7 @@ struct ChunkIterator {
 	size_t index;
 };
 
-struct ChunkIterator chunkiterator_create(struct ChunkCoord origin, u16 radius);
-err_t chunkiterator_next(struct ChunkIterator *iterator, struct ChunkCoord *nextout);
+struct ChunkIterator chunkiterator_create(struct ChunkPos origin, u16 radius);
+bool chunkiterator_next(struct ChunkIterator *iterator, struct ChunkPos *nextout);
 
 #endif

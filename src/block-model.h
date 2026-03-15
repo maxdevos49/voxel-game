@@ -1,13 +1,16 @@
+#include <_static_assert.h>
 #ifndef BLOCK_H
 #define BLOCK_H 1
 
 #include <cglm/cglm.h>
+#include <m4xdev/types.h>
 
 enum BlockType {
+	AIR_BLOCK,
 	STONE_BLOCK,
 	DIRT_BLOCK,
 	GRASS_BLOCK,
-	AIR_BLOCK,
+	WATER_BLOCK,
 	BLOCK_COUNT,
 };
 
@@ -16,6 +19,7 @@ enum BlockTexture {
 	DIRT_TEXTURE,
 	GRASS_TEXTURE,
 	GRASS_SIDE_TEXTURE,
+	WATER_TEXTURE,
 	MISSING_TEXTURE,
 	BLOCK_TEXTURE_COUNT
 };
@@ -34,8 +38,7 @@ struct Vertex {
 	float x;
 	float y;
 	float z;
-	float u;
-	float v;
+	u32 data;
 };
 
 // Take some inspiration from: https://minecraft.wiki/w/Model
@@ -53,7 +56,7 @@ struct BlockModel {
 	} computed[FACE_COUNT];
 };
 
-extern struct BlockModel BlockModels[BLOCK_COUNT - 1]; // -1 to not include air block
+extern struct BlockModel BlockModels[BLOCK_COUNT];
 
 void blocks_init_registry(void);
 

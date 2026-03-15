@@ -3,20 +3,22 @@
 
 #include <stdbool.h>
 #include "camera.h"
-#include "chunks/manager.h"
+#include "graphics/texture-atlas.h"
 
-
-#define CHUNK_RADIUS (16)
+#define CHUNK_RADIUS (32)
 
 struct AppState {
 	struct {
 		bool wireframe;
 		bool vsync;
+		bool facecull;
+		bool antialias;
 		struct Camera camera;
 
 	} renderer;
 
-	struct ChunkManager *chunk_manager;
+	struct World *world;
+	struct TextureAtlas tile_atlas;
 };
 
 #endif

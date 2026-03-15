@@ -3,26 +3,19 @@
 
 #include <m4xdev/types.h>
 
-#define CHUNK_VIEW_AREA(radius) ((radius * 2 + 1) * (radius * 2 + 1))
+#include "chunk.h"
+#include "world.h"
 
-struct ChunkCoord {
-	i32 x;
-	i32 z;
-};
+#define CHUNK_VIEW_AREA(radius) ((radius * 2 + 1) * (radius * 2 + 1))
 
 struct ChunkManager;
 
-err_t chunkmanager_create(u16 radius, struct ChunkManager **managerout);
-void chunkmanager_destroy(struct ChunkManager *manager);
+err_t chunkmanager_create(u16 radius, struct ChunkManager **selfout);
+void chunkmanager_destroy(struct ChunkManager *self);
 
-err_t chunkmanager_update(struct ChunkManager *manager, double blockX, double blockZ);
-err_t chunkmanager_render(struct ChunkManager *manager, double blockX, double blockZ);
+struct Chunk *chunkmanager_get(const struct ChunkManager *self, struct ChunkPos pos);
 
-// Ideas
-// void chunkmanager_set_simulation_radius(struct ChunkManager *manager, u8 radius);
-// u8 chunkmanager_get_simulation_radius(struct ChunkManager *manager);
-
-// void chunkmanager_set_render_radius(struct ChunkManager *manager, u8 radius);
-// u8 chunkmanager_get_render_radius(struct ChunkManager *manager);
+err_t chunkmanager_update(struct ChunkManager *self, struct World *world, double blockX, double blockZ, bool load_all);
+err_t chunkmanager_render(struct ChunkManager *self, double blockX, double blockZ);
 
 #endif

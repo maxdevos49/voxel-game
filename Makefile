@@ -17,8 +17,8 @@ OBJECTS		=  $(patsubst src/%.c,obj/%.o,$(SOURCES))
 ################################################################################
 
 .PHONY: release
-release: CFLAGS	+= -O3 -Werror -march=native -flto -DNDEBUG
-release: CPPFLAGS += -DLOG_LEVEL=0
+release: CFLAGS	+= -O3 -Werror -march=native -flto
+release: CPPFLAGS += -DLOG_LEVEL=0 -DNDEBUG
 release: bin/$(BINARY)
 
 .PHONY: run-release
@@ -26,8 +26,8 @@ run-release: clean release
 	./bin/$(BINARY)
 
 .PHONY: debug
-debug: CFLAGS += -g -O0 -DDEBUG -fsanitize=address,undefined,signed-integer-overflow
-debug: CPPFLAGS += -DLOG_LEVEL=0
+debug: CFLAGS += -g -march=native -fsanitize=address,undefined,signed-integer-overflow
+debug: CPPFLAGS += -DLOG_LEVEL=0 -DDEBUG
 debug: disable_crash_reporter bin/$(BINARY)
 
 .PHONY: run-debug

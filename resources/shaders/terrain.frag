@@ -1,12 +1,14 @@
 #version 330 core
 
-in vec2 TexCoord;
+uniform sampler2DArray atlas;
+
+flat in uint v_texture_layer;
+in vec2 v_texture_uv;
+in float v_ao;
 
 out vec4 FragColor;
 
-uniform sampler2D terrainTexture;
-
 void main()
 {
-    FragColor = texture(terrainTexture, TexCoord);
+    FragColor = texture(atlas, vec3(v_texture_uv, v_texture_layer)) * v_ao;
 }

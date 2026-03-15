@@ -97,6 +97,8 @@ void window_create(struct WindowConfig config, struct AppState *app) {
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+	// https://learnopengl.com/Advanced-OpenGL/Anti-Aliasing
+	glfwWindowHint(GLFW_SAMPLES, 4);
 
 	struct WindowState window = {0};
 

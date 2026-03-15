@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <string.h>
+#include <m4xdev/types.h>
 
+#include "chunk.h"
 #include "cache.h"
 
 #define HM_FREE		 1
@@ -60,6 +62,14 @@ err_t chunkcache_create(size_t capacity, struct ChunkCache **cacheout) {
 	*cacheout = cache;
 
 	return 0;
+}
+
+void chunkcache_destroy(struct ChunkCache *cache) {
+	assert(cache != NULL);
+	assert(cache->size == 0);
+
+	free(cache);
+	cache = NULL;
 }
 
 /**
@@ -226,4 +236,15 @@ struct Chunk *chunkcache_add(struct ChunkCache *cache, i32 chunkX, i32 chunkZ, s
 	cache->size++;
 
 	return evicted;
+}
+
+struct Chunk *chunkcache_remove_oldest(struct ChunkCache *cache) {
+	assert(cache != NULL);
+
+	if (cache->tail == NULL) {
+		return NULL;
+	}
+
+	struct ChunkNode *node = cache->tail;
+	return chunkcache_remove(cache, node->key.x, node->key.z);
 }
