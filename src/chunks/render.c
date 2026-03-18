@@ -81,7 +81,7 @@ static void push_face(struct ChunkMesh *mesh, struct BlockPos local, enum BlockT
 
 	mesh->vertex_array.length += 4;
 
-	u32 index_offset = mesh->index_array.length;
+	u64 index_offset = mesh->index_array.length;
 
 	if (vertex_ao_flip(aoV0, aoV1, aoV2, aoV3)) {
 		mesh->index_array.data[index_offset + 0] = vertex_offset + 0;
@@ -102,30 +102,107 @@ static void push_face(struct ChunkMesh *mesh, struct BlockPos local, enum BlockT
 	mesh->index_array.length += 6;
 }
 
-typedef const struct Chunk *chunkneighbors_t[3][3]; //zx
+struct NeighborCache {
+	struct BlockPos local;
+	u64 y_center_slice;				  // Wraps y value
+	u16 blocks[3][3][3];			  // zxy
+	const struct Chunk *chunks[3][3]; // zx
+};
 
-static inline u16 chunkneighbors_get_block(chunkneighbors_t neighbors, i32 localX, i32 localY, i32 localZ) {
-	i32 chunkX = (localX >> CHUNK_WIDTH_BITS) + 1;
-	i32 chunkZ = (localZ >> CHUNK_WIDTH_BITS) + 1;
+static inline struct NeighborCache neighborcache_init(
+	const struct Chunk *center_chunk,
+	const struct Chunk *north_chunk,
+	const struct Chunk *north_east_chunk,
+	const struct Chunk *east_chunk,
+	const struct Chunk *south_east_chunk,
+	const struct Chunk *south_chunk,
+	const struct Chunk *south_west_chunk,
+	const struct Chunk *west_chunk,
+	const struct Chunk *north_west_chunk) {
+	struct NeighborCache cache = {0};
+	cache.chunks[0][0] = north_west_chunk;
+	cache.chunks[0][1] = north_chunk;
+	cache.chunks[0][2] = north_east_chunk;
 
-	const struct Chunk *chunk = neighbors[chunkZ][chunkX];
-	if (chunk == NULL || localY < CHUNK_MIN_HEIGHT || localY >= CHUNK_MAX_HEIGHT) return AIR_BLOCK;
+	cache.chunks[1][0] = west_chunk;
+	cache.chunks[1][1] = center_chunk;
+	cache.chunks[1][2] = east_chunk;
 
-	i32 x = localX & CHUNK_WIDTH_MASK;
-	i32 y = localY;
-	i32 z = localZ & CHUNK_WIDTH_MASK;
+	cache.chunks[2][0] = south_west_chunk;
+	cache.chunks[2][1] = south_chunk;
+	cache.chunks[2][2] = south_east_chunk;
+
+	cache.y_center_slice = 1;
+
+	return cache;
+}
+
+static inline u16 neighborcache_get_block_from_chunk(struct NeighborCache *cache, i64 localX, i64 localY, i64 localZ) {
+	assert(cache != NULL);
+	assert(localX >= -1 && localX <= CHUNK_WIDTH);
+	assert(localZ >= -1 && localZ <= CHUNK_WIDTH);
+
+	if (localY < CHUNK_MIN_HEIGHT || localY > CHUNK_MAX_HEIGHT) return AIR_BLOCK;
+
+	i64 chunkX = (localX >> CHUNK_WIDTH_BITS) + 1;
+	i64 chunkZ = (localZ >> CHUNK_WIDTH_BITS) + 1;
+
+	const struct Chunk *chunk = cache->chunks[chunkZ][chunkX];
+	if (chunk == NULL) return AIR_BLOCK;
+
+	i64 x = localX & CHUNK_WIDTH_MASK;
+	i64 y = localY;
+	i64 z = localZ & CHUNK_WIDTH_MASK;
 
 	return chunk_get_block(chunk, (struct BlockPos){x, y, z});
 }
 
-typedef u16 blockneighbors_t[3][3][3]; //zxy
+static inline void neighborcache_shift(struct NeighborCache *cache) {
+	cache->local.y += 1;
 
-static inline u16 blockneighbors_get_block(blockneighbors_t neighbors, i32 offsetX, i32 offsetY, i32 offsetZ) {
+	cache->y_center_slice += 1;
+	if (cache->y_center_slice > 2) cache->y_center_slice = 0;
+
+	u64 y_top_slice = cache->y_center_slice + 1;
+	if (y_top_slice > 2) y_top_slice = 0;
+
+	cache->blocks[0][0][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x - 1, cache->local.y + 1, cache->local.z - 1);
+	cache->blocks[0][1][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x, cache->local.y + 1, cache->local.z - 1);
+	cache->blocks[0][2][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x + 1, cache->local.y + 1, cache->local.z - 1);
+	cache->blocks[1][0][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x - 1, cache->local.y + 1, cache->local.z);
+	cache->blocks[1][1][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x, cache->local.y + 1, cache->local.z);
+	cache->blocks[1][2][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x + 1, cache->local.y + 1, cache->local.z);
+	cache->blocks[2][0][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x - 1, cache->local.y + 1, cache->local.z + 1);
+	cache->blocks[2][1][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x, cache->local.y + 1, cache->local.z + 1);
+	cache->blocks[2][2][y_top_slice] = neighborcache_get_block_from_chunk(cache, cache->local.x + 1, cache->local.y + 1, cache->local.z + 1);
+}
+
+static inline void neighborcache_reset_at(struct NeighborCache *cache, i64 localX, i64 localZ) {
+	assert(cache != NULL);
+	assert(localX >= 0 && localX < CHUNK_WIDTH);
+	assert(localZ >= 0 && localZ < CHUNK_WIDTH);
+
+	memset(cache->blocks, AIR_BLOCK, sizeof(cache->blocks));
+
+	cache->local.x = localX;
+	cache->local.y = -2;
+	cache->local.z = localZ;
+	cache->y_center_slice = 1;
+
+	neighborcache_shift(cache); // Shift in y 0 column
+}
+
+static inline u16 neighborcache_get_block(struct NeighborCache *cache, i64 offsetX, i64 offsetY, i64 offsetZ) {
+	assert(cache != NULL);
 	assert(offsetX >= -1 && offsetX <= 1);
 	assert(offsetY >= -1 && offsetY <= 1);
 	assert(offsetZ >= -1 && offsetZ <= 1);
 
-	return neighbors[offsetZ + 1][offsetX + 1][offsetY + 1];
+	i64 y = cache->y_center_slice + offsetY;
+	if (y > 2) y = 0;
+	if (y < 0) y = 2;
+
+	return cache->blocks[offsetZ + 1][offsetX + 1][y];
 }
 
 void chunkrenderer_mesh(
@@ -140,19 +217,6 @@ void chunkrenderer_mesh(
 	const struct Chunk *north_west_chunk) {
 	assert(chunk != NULL);
 
-	chunkneighbors_t chunks;
-	chunks[0][0] = north_west_chunk;
-	chunks[0][1] = north_chunk;
-	chunks[0][2] = north_east_chunk;
-
-	chunks[1][0] = west_chunk;
-	chunks[1][1] = chunk;
-	chunks[1][2] = east_chunk;
-
-	chunks[2][0] = south_west_chunk;
-	chunks[2][1] = south_chunk;
-	chunks[2][2] = south_east_chunk;
-
 #if PROFILE_PERFORMANCE
 	struct Perf p = {0};
 	perf_start(&p);
@@ -161,68 +225,47 @@ void chunkrenderer_mesh(
 	chunk_mesh.vertex_array.length = 0;
 	chunk_mesh.index_array.length = 0;
 
-	blockneighbors_t blocks = {0};
+	struct NeighborCache cache = neighborcache_init(
+		chunk,
+		north_chunk,
+		north_east_chunk,
+		east_chunk,
+		south_east_chunk,
+		south_chunk,
+		south_west_chunk,
+		west_chunk,
+		north_west_chunk);
 
-	for (i32 x = 0; x < CHUNK_WIDTH; x++) {
-		for (i32 z = 0; z < CHUNK_WIDTH; z++) {
-			i32 highest_block = chunk_hightmap_at(chunk, (struct BlockPos){x, 0, z});
+	for (i64 z = 0; z < CHUNK_WIDTH; z++) {
+		for (i64 x = 0; x < CHUNK_WIDTH; x++) {
+			i64 highest_block = chunk_hightmap_at(chunk, (struct BlockPos){x, 0, z});
 
-			for (i32 y = 0; y <= highest_block; y++) {
+			neighborcache_reset_at(&cache, x, z);
+
+			bool skip_north_face = north_chunk == NULL && z == 0;
+			bool skip_east_face = east_chunk == NULL && x == CHUNK_WIDTH - 1;
+			bool skip_south_face = south_chunk == NULL && z == CHUNK_WIDTH - 1;
+			bool skip_west_face = west_chunk == NULL && x == 0;
+
+			for (i64 y = 0; y <= highest_block; y++) {
+				neighborcache_shift(&cache);
+
 				struct BlockPos local = {x, y, z};
 
-				u16 block = chunkneighbors_get_block(chunks, x, y, z);
+				u16 block = neighborcache_get_block(&cache, 0, 0, 0);
 				if (block == AIR_BLOCK) continue;
 
-				// West Slice blocks
-				blocks[0][0][0] = chunkneighbors_get_block(chunks, x - 1, y - 1, z - 1);
-				blocks[0][0][1] = chunkneighbors_get_block(chunks, x - 1, y, z - 1);
-				blocks[0][0][2] = chunkneighbors_get_block(chunks, x - 1, y + 1, z - 1);
-
-				blocks[0][1][0] = chunkneighbors_get_block(chunks, x, y - 1, z - 1);
-				blocks[0][1][1] = chunkneighbors_get_block(chunks, x, y, z - 1);
-				blocks[0][1][2] = chunkneighbors_get_block(chunks, x, y + 1, z - 1);
-
-				blocks[0][2][0] = chunkneighbors_get_block(chunks, x + 1, y - 1, z - 1);
-				blocks[0][2][1] = chunkneighbors_get_block(chunks, x + 1, y, z - 1);
-				blocks[0][2][2] = chunkneighbors_get_block(chunks, x + 1, y + 1, z - 1);
-
-				// Center slice blocks
-				blocks[1][0][0] = chunkneighbors_get_block(chunks, x - 1, y - 1, z);
-				blocks[1][0][1] = chunkneighbors_get_block(chunks, x - 1, y, z);
-				blocks[1][0][2] = chunkneighbors_get_block(chunks, x - 1, y + 1, z);
-
-				blocks[1][1][0] = chunkneighbors_get_block(chunks, x, y - 1, z);
-				blocks[1][1][1] = block;
-				blocks[1][1][2] = chunkneighbors_get_block(chunks, x, y + 1, z);
-
-				blocks[1][2][0] = chunkneighbors_get_block(chunks, x + 1, y - 1, z);
-				blocks[1][2][1] = chunkneighbors_get_block(chunks, x + 1, y, z);
-				blocks[1][2][2] = chunkneighbors_get_block(chunks, x + 1, y + 1, z);
-
-				// East slice blocks
-				blocks[2][0][0] = chunkneighbors_get_block(chunks, x - 1, y - 1, z + 1);
-				blocks[2][0][1] = chunkneighbors_get_block(chunks, x - 1, y, z + 1);
-				blocks[2][0][2] = chunkneighbors_get_block(chunks, x - 1, y + 1, z + 1);
-
-				blocks[2][1][0] = chunkneighbors_get_block(chunks, x, y - 1, z + 1);
-				blocks[2][1][1] = chunkneighbors_get_block(chunks, x, y, z + 1);
-				blocks[2][1][2] = chunkneighbors_get_block(chunks, x, y + 1, z + 1);
-
-				blocks[2][2][0] = chunkneighbors_get_block(chunks, x + 1, y - 1, z + 1);
-				blocks[2][2][1] = chunkneighbors_get_block(chunks, x + 1, y, z + 1);
-				blocks[2][2][2] = chunkneighbors_get_block(chunks, x + 1, y + 1, z + 1);
-
 				// Top face
-				u16 top_block = blockneighbors_get_block(blocks, 0, 1, 0);
+				u16 top_block = neighborcache_get_block(&cache, 0, 1, 0);
 				if (top_block == AIR_BLOCK) {
-					bool north = blockneighbors_get_block(blocks, 0, 1, -1) != AIR_BLOCK;
-					bool north_east = blockneighbors_get_block(blocks, 1, 1, -1) != AIR_BLOCK;
-					bool east = blockneighbors_get_block(blocks, 1, 1, 0) != AIR_BLOCK;
-					bool south_east = blockneighbors_get_block(blocks, 1, 1, 1) != AIR_BLOCK;
-					bool south = blockneighbors_get_block(blocks, 0, 1, 1) != AIR_BLOCK;
-					bool south_west = blockneighbors_get_block(blocks, -1, 1, 1) != AIR_BLOCK;
-					bool west = blockneighbors_get_block(blocks, -1, 1, 0) != AIR_BLOCK;
-					bool north_west = blockneighbors_get_block(blocks, -1, 1, -1) != AIR_BLOCK;
+					bool north = neighborcache_get_block(&cache, 0, 1, -1) != AIR_BLOCK;
+					bool north_east = neighborcache_get_block(&cache, 1, 1, -1) != AIR_BLOCK;
+					bool east = neighborcache_get_block(&cache, 1, 1, 0) != AIR_BLOCK;
+					bool south_east = neighborcache_get_block(&cache, 1, 1, 1) != AIR_BLOCK;
+					bool south = neighborcache_get_block(&cache, 0, 1, 1) != AIR_BLOCK;
+					bool south_west = neighborcache_get_block(&cache, -1, 1, 1) != AIR_BLOCK;
+					bool west = neighborcache_get_block(&cache, -1, 1, 0) != AIR_BLOCK;
+					bool north_west = neighborcache_get_block(&cache, -1, 1, -1) != AIR_BLOCK;
 
 					u8 aoV0 = vertex_ao(south, west, south_west);
 					u8 aoV1 = vertex_ao(east, south, south_east);
@@ -232,20 +275,20 @@ void chunkrenderer_mesh(
 					push_face(&chunk_mesh, local, block, TOP_FACE, aoV0, aoV1, aoV2, aoV3);
 				}
 
-						// Top face
-				u16 bottom_block = blockneighbors_get_block(blocks, 0, -1, 0);
+				// Bottom face
+				u16 bottom_block = neighborcache_get_block(&cache, 0, -1, 0);
 				if (bottom_block == AIR_BLOCK) {
-					bool north = 		blockneighbors_get_block(blocks, 0, -1, -1) != AIR_BLOCK;
-					bool north_east = 	blockneighbors_get_block(blocks, 1, -1, -1) != AIR_BLOCK;
-					bool east = 		blockneighbors_get_block(blocks, 1, -1, 0) != AIR_BLOCK;
-					bool south_east = 	blockneighbors_get_block(blocks, 1, -1, 1) != AIR_BLOCK;
-					bool south = 		blockneighbors_get_block(blocks, 0, -1, 1) != AIR_BLOCK;
-					bool south_west = 	blockneighbors_get_block(blocks, -1, -1, 1) != AIR_BLOCK;
-					bool west = 		blockneighbors_get_block(blocks, -1, -1, 0) != AIR_BLOCK;
-					bool north_west = 	blockneighbors_get_block(blocks, -1, -1, -1) != AIR_BLOCK;
+					bool north = neighborcache_get_block(&cache, 0, -1, -1) != AIR_BLOCK;
+					bool north_east = neighborcache_get_block(&cache, 1, -1, -1) != AIR_BLOCK;
+					bool east = neighborcache_get_block(&cache, 1, -1, 0) != AIR_BLOCK;
+					bool south_east = neighborcache_get_block(&cache, 1, -1, 1) != AIR_BLOCK;
+					bool south = neighborcache_get_block(&cache, 0, -1, 1) != AIR_BLOCK;
+					bool south_west = neighborcache_get_block(&cache, -1, -1, 1) != AIR_BLOCK;
+					bool west = neighborcache_get_block(&cache, -1, -1, 0) != AIR_BLOCK;
+					bool north_west = neighborcache_get_block(&cache, -1, -1, -1) != AIR_BLOCK;
 
 					u8 aoV0 = vertex_ao(north, west, north_west);
-					u8 aoV1 = vertex_ao(north,east, north_east);
+					u8 aoV1 = vertex_ao(north, east, north_east);
 					u8 aoV2 = vertex_ao(south, east, south_east);
 					u8 aoV3 = vertex_ao(south, west, south_west);
 
@@ -253,36 +296,36 @@ void chunkrenderer_mesh(
 				}
 
 				// North Face
-				u16 north_block = blockneighbors_get_block(blocks, 0, 0, -1);
-				if (north_block == AIR_BLOCK) {
-					bool top = blockneighbors_get_block(blocks, 0, 1, -1) != AIR_BLOCK;
-					bool top_east = blockneighbors_get_block(blocks, 1, 1, -1) != AIR_BLOCK;
-					bool east = blockneighbors_get_block(blocks, 1, 0, -1) != AIR_BLOCK;
-					bool bottom_east = blockneighbors_get_block(blocks, 1, -1, -1) != AIR_BLOCK;
-					bool bottom = blockneighbors_get_block(blocks, 0, -1, -1) != AIR_BLOCK;
-					bool bottom_west = blockneighbors_get_block(blocks, -1, -1, -1) != AIR_BLOCK;
-					bool west = blockneighbors_get_block(blocks, -1, 0, -1) != AIR_BLOCK;
-					bool top_west = blockneighbors_get_block(blocks, -1, 1, -1) != AIR_BLOCK;
+				u16 north_block = neighborcache_get_block(&cache, 0, 0, -1);
+				if (north_block == AIR_BLOCK && !skip_north_face) {
+					bool top = neighborcache_get_block(&cache, 0, 1, -1) != AIR_BLOCK;
+					bool top_east = neighborcache_get_block(&cache, 1, 1, -1) != AIR_BLOCK;
+					bool east = neighborcache_get_block(&cache, 1, 0, -1) != AIR_BLOCK;
+					bool bottom_east = neighborcache_get_block(&cache, 1, -1, -1) != AIR_BLOCK;
+					bool bottom = neighborcache_get_block(&cache, 0, -1, -1) != AIR_BLOCK;
+					bool bottom_west = neighborcache_get_block(&cache, -1, -1, -1) != AIR_BLOCK;
+					bool west = neighborcache_get_block(&cache, -1, 0, -1) != AIR_BLOCK;
+					bool top_west = neighborcache_get_block(&cache, -1, 1, -1) != AIR_BLOCK;
 
 					u8 aoV0 = vertex_ao(bottom, east, bottom_east); // 0
 					u8 aoV1 = vertex_ao(bottom, west, bottom_west); // 1
-					u8 aoV2 = vertex_ao(top, west, top_west);// 3
-					u8 aoV3 = vertex_ao(top, east, top_east);// 2
+					u8 aoV2 = vertex_ao(top, west, top_west);		// 3
+					u8 aoV3 = vertex_ao(top, east, top_east);		// 2
 
 					push_face(&chunk_mesh, local, block, NORTH_FACE, aoV0, aoV1, aoV2, aoV3);
 				}
 
 				// East face
-				u16 east_block = blockneighbors_get_block(blocks, 1, 0, 0);
-				if (east_block == AIR_BLOCK) {
-					bool top = blockneighbors_get_block(blocks, 1, 1, 0) != AIR_BLOCK;
-					bool top_north = blockneighbors_get_block(blocks, 1, 1, -1) != AIR_BLOCK;
-					bool north = blockneighbors_get_block(blocks, 1, 0, -1) != AIR_BLOCK;
-					bool bottom_north = blockneighbors_get_block(blocks, 1, -1, -1) != AIR_BLOCK;
-					bool bottom = blockneighbors_get_block(blocks, 1, -1, 0) != AIR_BLOCK;
-					bool bottom_south = blockneighbors_get_block(blocks, 1, -1, 1) != AIR_BLOCK;
-					bool south = blockneighbors_get_block(blocks, 1, 0, 1) != AIR_BLOCK;
-					bool top_south = blockneighbors_get_block(blocks, 1, 1, 1) != AIR_BLOCK;
+				u16 east_block = neighborcache_get_block(&cache, 1, 0, 0);
+				if (east_block == AIR_BLOCK && !skip_east_face) {
+					bool top = neighborcache_get_block(&cache, 1, 1, 0) != AIR_BLOCK;
+					bool top_north = neighborcache_get_block(&cache, 1, 1, -1) != AIR_BLOCK;
+					bool north = neighborcache_get_block(&cache, 1, 0, -1) != AIR_BLOCK;
+					bool bottom_north = neighborcache_get_block(&cache, 1, -1, -1) != AIR_BLOCK;
+					bool bottom = neighborcache_get_block(&cache, 1, -1, 0) != AIR_BLOCK;
+					bool bottom_south = neighborcache_get_block(&cache, 1, -1, 1) != AIR_BLOCK;
+					bool south = neighborcache_get_block(&cache, 1, 0, 1) != AIR_BLOCK;
+					bool top_south = neighborcache_get_block(&cache, 1, 1, 1) != AIR_BLOCK;
 
 					u8 aoV0 = vertex_ao(south, bottom, bottom_south);
 					u8 aoV1 = vertex_ao(north, bottom, bottom_north);
@@ -293,16 +336,16 @@ void chunkrenderer_mesh(
 				}
 
 				// South face
-				u16 south_block = blockneighbors_get_block(blocks, 0, 0, 1);
-				if (south_block == AIR_BLOCK) {
-					bool top = blockneighbors_get_block(blocks, 0, 1, 1) != AIR_BLOCK;
-					bool top_east = blockneighbors_get_block(blocks, 1, 1, 1) != AIR_BLOCK;
-					bool east = blockneighbors_get_block(blocks, 1, 0, 1) != AIR_BLOCK;
-					bool bottom_east = blockneighbors_get_block(blocks, 1, -1, 1) != AIR_BLOCK;
-					bool bottom = blockneighbors_get_block(blocks, 0, -1, 1) != AIR_BLOCK;
-					bool bottom_west = blockneighbors_get_block(blocks, -1, -1, 1) != AIR_BLOCK;
-					bool west = blockneighbors_get_block(blocks, -1, 0, 1) != AIR_BLOCK;
-					bool top_west = blockneighbors_get_block(blocks, -1, 1, 1) != AIR_BLOCK;
+				u16 south_block = neighborcache_get_block(&cache, 0, 0, 1);
+				if (south_block == AIR_BLOCK && !skip_south_face) {
+					bool top = neighborcache_get_block(&cache, 0, 1, 1) != AIR_BLOCK;
+					bool top_east = neighborcache_get_block(&cache, 1, 1, 1) != AIR_BLOCK;
+					bool east = neighborcache_get_block(&cache, 1, 0, 1) != AIR_BLOCK;
+					bool bottom_east = neighborcache_get_block(&cache, 1, -1, 1) != AIR_BLOCK;
+					bool bottom = neighborcache_get_block(&cache, 0, -1, 1) != AIR_BLOCK;
+					bool bottom_west = neighborcache_get_block(&cache, -1, -1, 1) != AIR_BLOCK;
+					bool west = neighborcache_get_block(&cache, -1, 0, 1) != AIR_BLOCK;
+					bool top_west = neighborcache_get_block(&cache, -1, 1, 1) != AIR_BLOCK;
 
 					u8 aoV0 = vertex_ao(west, bottom, bottom_west);
 					u8 aoV1 = vertex_ao(east, bottom, bottom_east);
@@ -313,16 +356,16 @@ void chunkrenderer_mesh(
 				}
 
 				// West face
-				u16 west_block = blockneighbors_get_block(blocks, -1, 0, 0);
-				if (west_block == AIR_BLOCK) {
-					bool top = blockneighbors_get_block(blocks, -1, 1, 0) != AIR_BLOCK;
-					bool top_north = blockneighbors_get_block(blocks, -1, 1, -1) != AIR_BLOCK;
-					bool north = blockneighbors_get_block(blocks, -1, 0, -1) != AIR_BLOCK;
-					bool bottom_north = blockneighbors_get_block(blocks, -1, -1, -1) != AIR_BLOCK;
-					bool bottom = blockneighbors_get_block(blocks, -1, -1, 0) != AIR_BLOCK;
-					bool bottom_south = blockneighbors_get_block(blocks, -1, -1, 1) != AIR_BLOCK;
-					bool south = blockneighbors_get_block(blocks, -1, 0, 1) != AIR_BLOCK;
-					bool top_south = blockneighbors_get_block(blocks, -1, 1, 1) != AIR_BLOCK;
+				u16 west_block = neighborcache_get_block(&cache, -1, 0, 0);
+				if (west_block == AIR_BLOCK && !skip_west_face) {
+					bool top = neighborcache_get_block(&cache, -1, 1, 0) != AIR_BLOCK;
+					bool top_north = neighborcache_get_block(&cache, -1, 1, -1) != AIR_BLOCK;
+					bool north = neighborcache_get_block(&cache, -1, 0, -1) != AIR_BLOCK;
+					bool bottom_north = neighborcache_get_block(&cache, -1, -1, -1) != AIR_BLOCK;
+					bool bottom = neighborcache_get_block(&cache, -1, -1, 0) != AIR_BLOCK;
+					bool bottom_south = neighborcache_get_block(&cache, -1, -1, 1) != AIR_BLOCK;
+					bool south = neighborcache_get_block(&cache, -1, 0, 1) != AIR_BLOCK;
+					bool top_south = neighborcache_get_block(&cache, -1, 1, 1) != AIR_BLOCK;
 
 					u8 aoV0 = vertex_ao(north, bottom, bottom_north);
 					u8 aoV1 = vertex_ao(south, bottom, bottom_south);

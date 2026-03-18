@@ -35,39 +35,24 @@ static void chunksection_deallocate(struct ChunkSection *section) {
 	section = NULL;
 }
 
-static inline u64 chunksection_block_index(struct BlockPos local) {
-	i32 sectionY = local.y & CHUNK_SECTION_MASK;
-	return ((u64)sectionY << 8) | ((u64)local.z << 4) | (u64)local.x;
-}
-
 //==============================================================================
 // CHUNK FUNCTIONS
 //==============================================================================
 
-static inline u64 chunk_section_index(i32 localY) {
-	assert(localY >= CHUNK_MIN_HEIGHT && localY < CHUNK_MAX_HEIGHT);
-
-	return (u64)localY >> CHUNK_SECTION_BITS;
-}
-
-static inline u64 chunk_hightmap_index(i32 localX, i32 localZ) {
-	return ((u64)localZ << 4) | (u64)localX;
-}
-
 static inline void chunk_update_heightmap(struct Chunk *chunk, struct BlockPos local, u16 block) {
 	assert(chunk != NULL);
-	u64 heightmap_index = chunk_hightmap_index(local.x, local.z);
-	i32 current_height = (i32)chunk->heightmap[heightmap_index];
+	u64 heightmap_index = (local.z << 4) | local.x;
+	i64 current_height = chunk->heightmap[heightmap_index];
 	if (local.y > current_height && block != AIR_BLOCK) {
 		chunk->heightmap[heightmap_index] = local.y;
 	} else if (local.y == current_height && block == AIR_BLOCK) {
-		i32 y = local.y;
+		i64 y = local.y;
 		while (--y > 0 && chunk_get_block(chunk, (struct BlockPos){local.x, y, local.z}) == AIR_BLOCK);
 		chunk->heightmap[heightmap_index] = y;
 	}
 }
 
-err_t chunk_allocate(i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
+err_t chunk_allocate(i64 chunkX, i64 chunkZ, struct Chunk **chunkout) {
 	assert(chunkout != NULL);
 	*chunkout = NULL;
 
@@ -106,8 +91,7 @@ void chunk_destroy(struct Chunk *chunk) {
 void chunk_set_block(struct Chunk *chunk, struct BlockPos local, u16 block) {
 	assert(chunk != NULL);
 
-	u64 section_index = chunk_section_index(local.y);
-	struct ChunkSection *section = chunk->sections[section_index];
+	struct ChunkSection *section = chunk->sections[local.y >> CHUNK_SECTION_BITS];
 	if (section == NULL && block == AIR_BLOCK) {
 		return;
 	} else if (section == NULL) {
@@ -115,11 +99,10 @@ void chunk_set_block(struct Chunk *chunk, struct BlockPos local, u16 block) {
 			return;
 		}
 
-		chunk->sections[section_index] = section;
+		chunk->sections[local.y >> CHUNK_SECTION_BITS] = section;
 	}
-	assert(chunk->sections[section_index] != NULL);
 
-	u64 block_index = chunksection_block_index(local);
+	i64 block_index = local.z << 8 | local.x << 4 | (local.y & CHUNK_SECTION_MASK);
 
 	u16 old_block = section->data[block_index];
 	if (old_block != block) {
@@ -132,19 +115,16 @@ void chunk_set_block(struct Chunk *chunk, struct BlockPos local, u16 block) {
 u16 chunk_get_block(const struct Chunk *chunk, struct BlockPos local) {
 	assert(chunk != NULL);
 
-	u64 section_index = chunk_section_index(local.y);
-	struct ChunkSection *section = chunk->sections[section_index];
+	struct ChunkSection *section = chunk->sections[local.y >> CHUNK_SECTION_BITS];
 	if (section == NULL) return AIR_BLOCK;
 
-	u64 block_index = chunksection_block_index(local);
-	return section->data[block_index];
+	return section->data[local.z << 8 | local.x << 4 | (local.y & CHUNK_SECTION_MASK)];
 }
 
-i32 chunk_hightmap_at(const struct Chunk *chunk, struct BlockPos local) {
+i64 chunk_hightmap_at(const struct Chunk *chunk, struct BlockPos local) {
 	assert(chunk != NULL);
 
-	u64 index = chunk_hightmap_index(local.x, local.z);
-	return (i32)chunk->heightmap[index];
+	return chunk->heightmap[(local.z << 4) | local.x];
 }
 
 bool chunk_get_flag(const struct Chunk *chunk, i32 flag) {

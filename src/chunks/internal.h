@@ -8,8 +8,8 @@
 
 #define CHUNK_SECTION_COUNT	 (CHUNK_MAX_HEIGHT / CHUNK_WIDTH)
 #define CHUNK_SECTION_VOLUME (CHUNK_WIDTH * CHUNK_WIDTH * CHUNK_WIDTH)
-#define CHUNK_SECTION_BITS 4
-#define CHUNK_SECTION_MASK (CHUNK_WIDTH - 1)
+#define CHUNK_SECTION_BITS	 4
+#define CHUNK_SECTION_MASK	 (CHUNK_WIDTH - 1)
 
 struct ChunkGL {
 	size_t element_count;
@@ -19,12 +19,13 @@ struct ChunkGL {
 };
 
 struct ChunkSection {
-	u8 data[CHUNK_SECTION_VOLUME];
+	u16 data[CHUNK_SECTION_VOLUME]; // zxy
 };
 
 struct Chunk {
+	i64 x, z;
 	i32 flags;
-	i32 x, z;
+	i32 reserved;
 
 	struct ChunkSection *sections[CHUNK_SECTION_COUNT];
 

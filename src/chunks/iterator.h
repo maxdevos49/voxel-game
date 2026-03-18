@@ -6,11 +6,11 @@
 #include "chunk.h"
 
 struct ChunkIterator {
-	u16 radius;
+	i64 radius;
 	struct ChunkPos origin;
 
-	i32 x, z;
-	i32 dx, dz;
+	i64 x, z;
+	i64 dx, dz;
 
 	size_t length;
 	size_t index;

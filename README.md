@@ -8,3 +8,8 @@
 - Texture2DArray: 
 	- https://wikis.khronos.org/opengl/Array_Texture
 	- http://gaarlicbread.com/post/gl_2d_array
+
+- Profiling: https://gperftools.github.io/gperftools/cpuprofile.html
+	- Registers have have prefix x(64 bit) and w(32 bit)
+	- Values are prefixed with # 
+- Overdraw optimization: https://tomcc.github.io/index.html

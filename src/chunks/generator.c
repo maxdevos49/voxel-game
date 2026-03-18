@@ -14,7 +14,7 @@
 #define OCTAVES		4
 #define SEED		(u64)8675309
 
-static inline float noise_sample2d(u8 octaves, float persistance, float lacunarity, i32 offsetX, i32 offsetY) {
+static inline float noise_sample2d(u8 octaves, float persistance, float lacunarity, i64 offsetX, i64 offsetY) {
 	float amplitude = 1.0f;
 	float frequency = 1.0f;
 
@@ -32,7 +32,7 @@ static inline float noise_sample2d(u8 octaves, float persistance, float lacunari
 	return noise;
 }
 
-err_t chunk_generate_flat(i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
+err_t chunk_generate_flat(i64 chunkX, i64 chunkZ, struct Chunk **chunkout) {
 	assert(chunkout != NULL);
 	*chunkout = NULL;
 
@@ -41,11 +41,11 @@ err_t chunk_generate_flat(i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
 		return -1;
 	}
 
-	i32 ground_level = 40;
+	i64 ground_level = 40;
 
-	for (i32 x = 0; x < CHUNK_WIDTH; x++) {
-		for (i32 z = 0; z < CHUNK_WIDTH; z++) {
-			for (i32 y = 0; y <= ground_level; y++) {
+	for (i64 x = 0; x < CHUNK_WIDTH; x++) {
+		for (i64 z = 0; z < CHUNK_WIDTH; z++) {
+			for (i64 y = 0; y <= ground_level; y++) {
 				if (y == ground_level) {
 					chunk_set_block(chunk, (struct BlockPos){x, y, z}, GRASS_BLOCK);
 				} else if(ground_level - y < 5) {
@@ -63,7 +63,7 @@ err_t chunk_generate_flat(i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
 	return 0;
 }
 
-err_t chunk_generate(i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
+err_t chunk_generate(i64 chunkX, i64 chunkZ, struct Chunk **chunkout) {
 	assert(chunkout != NULL);
 	*chunkout = NULL;
 
@@ -77,8 +77,8 @@ err_t chunk_generate(i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
 		return -1;
 	}
 
-	for (i32 x = 0; x < CHUNK_WIDTH; x++) {
-		for (i32 z = 0; z < CHUNK_WIDTH; z++) {
+	for (i64 x = 0; x < CHUNK_WIDTH; x++) {
+		for (i64 z = 0; z < CHUNK_WIDTH; z++) {
 			float noise = noise_sample2d(
 							  OCTAVES,
 							  PERSISTANCE,
@@ -88,9 +88,9 @@ err_t chunk_generate(i32 chunkX, i32 chunkZ, struct Chunk **chunkout) {
 					100 +
 				60;
 
-			i32 elevation = (i32)MAX(MIN(noise, CHUNK_MAX_HEIGHT - 1), 0.0f);
+			i64 elevation = (i64)MAX(MIN(noise, CHUNK_MAX_HEIGHT - 1), 0.0f);
 
-			for (i32 y = MAX(elevation, 42); y >= 0; y--) {
+			for (i64 y = MAX(elevation, 42); y >= 0; y--) {
 				struct BlockPos local = {x, y, z};
 
 				if (elevation > 100) {

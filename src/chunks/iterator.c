@@ -22,12 +22,12 @@ struct ChunkIterator chunkiterator_create(struct ChunkPos origin, u16 radius) {
 }
 
 static inline void iterator_process(struct ChunkIterator *it) {
-	i32 x = it->x;
-	i32 z = it->z;
+	i64 x = it->x;
+	i64 z = it->z;
 
 	// Check for turn
 	if (x == z || (x < 0 && x == -z) || (x > 0 && x == 1 - z)) {
-		i32 tmp = it->dx;
+		i64 tmp = it->dx;
 		it->dx = -it->dz;
 		it->dz = tmp;
 	}
@@ -42,11 +42,11 @@ bool chunkiterator_next(struct ChunkIterator *it, struct ChunkPos *nextout) {
 	assert(it != NULL);
 	assert(nextout != NULL);
 
-	i32 r = (i32)it->radius;
+	i64 r = it->radius;
 
 	while (it->index < it->length) {
-		i32 x = it->x;
-		i32 z = it->z;
+		i64 x = it->x;
+		i64 z = it->z;
 
 		if (x >= -r && x <= r &&
 			z >= -r && z <= r) {

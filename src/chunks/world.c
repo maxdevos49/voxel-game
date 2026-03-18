@@ -42,7 +42,7 @@ void world_destroy(struct World *self) {
 	self = NULL;
 }
 
-u16 world_get_block(const struct World *self, i32 worldX, i32 worldY, i32 worldZ) {
+u16 world_get_block(const struct World *self, i64 worldX, i64 worldY, i64 worldZ) {
 	assert(self != NULL);
 
 	if (worldY < CHUNK_MIN_HEIGHT || worldY >= CHUNK_MAX_HEIGHT) {
@@ -59,7 +59,7 @@ u16 world_get_block(const struct World *self, i32 worldX, i32 worldY, i32 worldZ
 	return chunk_get_block(chunk, local);
 }
 
-err_t world_set_block(const struct World *world, i32 worldX, i32 worldY, i32 worldZ, u16 block) {
+err_t world_set_block(const struct World *world, i64 worldX, i64 worldY, i64 worldZ, u16 block) {
 	assert(world != NULL);
 
 	if (worldY < CHUNK_MIN_HEIGHT) {

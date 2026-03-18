@@ -1,11 +1,13 @@
-VERSION		= 0.0.1
+VERSION		= "0.0.2"
 BINARY		= voxel
 
 
 CC			= clang
-CFLAGS		= -std=c11 -Wall -Wextra -pedantic -Wno-gnu-zero-variadic-macro-arguments -Idep/glfw/3.4/include -Idep/glad/include -Idep/cglm/0.9.6/include -Idep/stb/include -Idep/m4xdev/include
-CPPFLAGS	= -DVERSION=\"$(VERSION)\"
+CFLAGS		= -std=c11 -march=native -Wall -Wextra -pedantic -Wno-gnu-zero-variadic-macro-arguments
+CPPFLAGS	= -Idep/glfw/3.4/include -Idep/glad/include -Idep/cglm/0.9.6/include -Idep/stb/include -Idep/m4xdev/include -DVERSION=\"$(VERSION)\"
 LDLIBS		= -Ldep/glfw/3.4/lib -lglfw -framework Cocoa -framework IOKit -framework CoreFoundation -lm
+
+GPERF_PREFIX := $(shell brew --prefix gperftools)
 
 #
 # Configure above
@@ -17,22 +19,25 @@ OBJECTS		=  $(patsubst src/%.c,obj/%.o,$(SOURCES))
 ################################################################################
 
 .PHONY: release
-release: CFLAGS	+= -O3 -Werror -march=native -flto
+release: CFLAGS	+= -Werror -flto -O3
 release: CPPFLAGS += -DLOG_LEVEL=0 -DNDEBUG
 release: bin/$(BINARY)
 
-.PHONY: run-release
-run-release: clean release
-	./bin/$(BINARY)
+.PHONY: profile
+profile: CFLAGS	+= -Werror -O3 -gline-tables-only -fno-omit-frame-pointer -fno-optimize-sibling-calls -fdebug-info-for-profiling
+profile: CPPFLAGS += -I$(GPERF_PREFIX)/include -DLOG_LEVEL=0 -DNDEBUG
+profile: LDLIBS += -L$(GPERF_PREFIX)/lib -lprofiler
+profile: disable_crash_reporter bin/$(BINARY)
+profile:
+	CPUPROFILE=voxel.prof CPUPROFILE_FREQUENCY=1000 ./bin/$(BINARY)
+	pprof --http=:3000 ./bin/voxel voxel.prof
 
 .PHONY: debug
-debug: CFLAGS += -g -march=native -fsanitize=address,undefined,signed-integer-overflow
+debug: CFLAGS += -O2 -fsanitize=address,undefined,signed-integer-overflow -g
 debug: CPPFLAGS += -DLOG_LEVEL=0 -DDEBUG
 debug: disable_crash_reporter bin/$(BINARY)
 
-.PHONY: run-debug
-run-debug: clean debug
-	./bin/$(BINARY)
+
 
 ################################################################################
 

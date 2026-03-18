@@ -42,11 +42,12 @@ err_t chunkmanager_create(u16 radius, struct ChunkManager **selfout) {
 	manager->radius = radius;
 	manager->cache = NULL;
 
-	size_t chunk_count = CHUNK_VIEW_AREA(radius) * 1.25f;
+	size_t chunk_count = CHUNK_VIEW_AREA(radius) * 2;
 	size_t cache_size = nextpow2(chunk_count);
+	size_t highwater = cache_size * 0.6;
 
 	struct ChunkCache *cache = NULL;
-	if (chunkcache_create(cache_size, &cache) != 0) {
+	if (chunkcache_create(cache_size, highwater, &cache) != 0) {
 		free(manager);
 		manager = NULL;
 		return -3;
@@ -87,7 +88,7 @@ err_t chunkmanager_update(struct ChunkManager *self, struct World *world, double
 	size_t generate_limit = 4;
 	size_t mesh_limit = 4;
 
-	struct ChunkPos origin = chunk_position_at((i32)blockX, (i32)blockZ);
+	struct ChunkPos origin = chunk_position_at(blockX, blockZ);
 	struct ChunkIterator it = chunkiterator_create(origin, self->radius);
 
 	struct ChunkPos pos;
@@ -169,8 +170,10 @@ err_t chunkmanager_render(struct ChunkManager *self, double blockX, double block
 
 	struct ChunkPos coord;
 	struct ChunkIterator it = chunkiterator_create(origin, self->radius);
+	struct Chunk *chunk = NULL;
+
 	while (chunkiterator_next(&it, &coord)) {
-		struct Chunk *chunk = chunkcache_get(self->cache, coord.x, coord.z);
+		chunk = chunkcache_get(self->cache, coord.x, coord.z);
 		if (chunk == NULL) continue;
 
 		chunkrenderer_render(chunk);
