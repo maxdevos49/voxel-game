@@ -5,10 +5,12 @@
 #include "camera.h"
 #include "graphics/texture-atlas.h"
 
-#define CHUNK_RADIUS (32)
-
+#ifndef DEFAULT_VIEW_RADIUS
+#define DEFAULT_VIEW_RADIUS 64
+#endif
 struct AppState {
 	struct {
+		u64 radius;
 		bool wireframe;
 		bool vsync;
 		bool facecull;

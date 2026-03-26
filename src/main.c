@@ -7,6 +7,7 @@
 
 #include "chunks/world.h"
 #include "graphics/texture-atlas.h"
+#include "graphics/window.h"
 #include "state.h"
 #include "camera.h"
 #include "block-model.h"
@@ -20,11 +21,11 @@ static void init(struct WindowState *window, struct AppState *app) {
 	shader_init_registry();
 	blocks_init_registry();
 
-	if (textureatlas_create(0, "resources/textures/blocks.png", 16, 16, 6, &app->tile_atlas) != 0) {
+	if (textureatlas_create(0, "resources/textures/blocks.png", 16, 16, BLOCK_TEXTURE_COUNT, &app->tile_atlas) != 0) {
 		LOG_FATAL("Failed to load atlas!");
 	}
 
-	if (world_create(CHUNK_RADIUS, &app->world) != 0) {
+	if (world_create(app->renderer.radius, &app->world) != 0) {
 		LOG_FATAL("Failed to create world manager.");
 	}
 
@@ -113,6 +114,22 @@ static void update(struct WindowState *window, struct AppState *app) {
 		}
 	}
 
+	if (window->keyboard[GLFW_KEY_F] == BUTTON_DOWN) {
+		LOG_DEBUG("Cycling View distance");
+
+		if (app->renderer.radius == 8) {
+			app->renderer.radius = 16;
+		} else if (app->renderer.radius == 16) {
+			app->renderer.radius = 32;
+		} else if (app->renderer.radius == 32) {
+			app->renderer.radius = 64;
+		} else if (app->renderer.radius == 64) {
+			app->renderer.radius = 8;
+		}
+
+		world_view_radius_set(app->world, app->renderer.radius);
+	}
+
 	camera_update(&app->renderer.camera, window);
 
 	world_update(app->world, app->renderer.camera.position[0], app->renderer.camera.position[2]);
@@ -150,6 +167,7 @@ int main(void) {
 
 	struct AppState state = {
 		.renderer = {
+			.radius = DEFAULT_VIEW_RADIUS,
 			.wireframe = false,
 			.vsync = true,
 			.facecull = true,

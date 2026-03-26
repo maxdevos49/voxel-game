@@ -390,11 +390,11 @@ void chunkrenderer_mesh(
 		size_t stride = sizeof(struct Vertex);
 
 		// Vertex
-		GL_CALL(glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, stride, (const void *)0));
+		GL_CALL(glVertexAttribPointer(0, 3, GL_UNSIGNED_BYTE, GL_FALSE, stride, (const void *)0));
 		GL_CALL(glEnableVertexAttribArray(0));
 
 		// Data (ao + texture)
-		GL_CALL(glVertexAttribPointer(1, 1, GL_UNSIGNED_INT, GL_FALSE, stride, (const void *)offsetof(struct Vertex, data)));
+		GL_CALL(glVertexAttribPointer(1, 1, GL_UNSIGNED_BYTE, GL_FALSE, stride, (const void *)offsetof(struct Vertex, data)));
 		GL_CALL(glEnableVertexAttribArray(1));
 
 		GL_CALL(glGenBuffers(1, &chunk->gl.ebo));
@@ -454,6 +454,6 @@ void chunkrenderer_render(const struct Chunk *chunk) {
 
 	shader_uniform_mat4(Shaders[TERRAIN_SHADER], "model", transformation);
 	GL_CALL(glBindVertexArray(chunk->gl.vao));
-	GL_CALL(glDrawElements(GL_TRIANGLES, chunk->gl.element_count, GL_UNSIGNED_INT, 0));
+	GL_CALL(glDrawElements(GL_TRIANGLES, chunk->gl.element_count, GL_UNSIGNED_INT, NULL));
 	GL_CALL(glBindVertexArray(0));
 }

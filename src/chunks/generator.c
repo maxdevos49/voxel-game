@@ -48,7 +48,7 @@ err_t chunk_generate_flat(i64 chunkX, i64 chunkZ, struct Chunk **chunkout) {
 			for (i64 y = 0; y <= ground_level; y++) {
 				if (y == ground_level) {
 					chunk_set_block(chunk, (struct BlockPos){x, y, z}, GRASS_BLOCK);
-				} else if(ground_level - y < 5) {
+				} else if (ground_level - y < 5) {
 					chunk_set_block(chunk, (struct BlockPos){x, y, z}, DIRT_BLOCK);
 				} else {
 					chunk_set_block(chunk, (struct BlockPos){x, y, z}, STONE_BLOCK);
@@ -56,8 +56,6 @@ err_t chunk_generate_flat(i64 chunkX, i64 chunkZ, struct Chunk **chunkout) {
 			}
 		}
 	}
-
-
 
 	*chunkout = chunk;
 	return 0;
@@ -88,23 +86,25 @@ err_t chunk_generate(i64 chunkX, i64 chunkZ, struct Chunk **chunkout) {
 					100 +
 				60;
 
+			i64 sea_level = 42;
 			i64 elevation = (i64)MAX(MIN(noise, CHUNK_MAX_HEIGHT - 1), 0.0f);
+			i64 tree_line = 100;
 
-			for (i64 y = MAX(elevation, 42); y >= 0; y--) {
+			for (i64 y = MAX(elevation, sea_level); y >= 0; y--) {
 				struct BlockPos local = {x, y, z};
 
-				if (elevation > 100) {
-					chunk_set_block(chunk, local, STONE_BLOCK);
-				} else if (elevation < 42 && y > elevation) {
+				if (y == 0) {
+					chunk_set_block(chunk, local, BEDROCK_BLOCK);
+				} else if (elevation < sea_level + 4 && y <= elevation && elevation - y < 4) {
+					chunk_set_block(chunk, local, SAND_BLOCK);
+				} else if (elevation < sea_level && y > elevation) {
 					chunk_set_block(chunk, local, WATER_BLOCK);
+				} else if (y < elevation && elevation - y < 6 && elevation < tree_line) {
+					chunk_set_block(chunk, local, DIRT_BLOCK);
+				} else if (y == elevation && elevation < tree_line) {
+					chunk_set_block(chunk, local, GRASS_BLOCK);
 				} else {
-					if (y == elevation) {
-						chunk_set_block(chunk, local, GRASS_BLOCK);
-					} else if (elevation - y < 6) {
-						chunk_set_block(chunk, local, DIRT_BLOCK);
-					} else {
-						chunk_set_block(chunk, local, STONE_BLOCK);
-					}
+					chunk_set_block(chunk, local, STONE_BLOCK);
 				}
 			}
 		}

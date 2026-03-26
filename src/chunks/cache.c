@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <m4xdev/types.h>
 
@@ -20,15 +21,7 @@ static_assert(CHUNK_WIDTH == 16, "Chunk cache assumes chunk width of 16");
 #define KEY_CHUNK_POS_X_BITS 28
 #define KEY_CHUNK_POS_X_MASK ((1UL << KEY_CHUNK_POS_X_BITS) - 1)
 
-static inline u64 chunkcache_key(i64 chunkX, i64 chunkZ) {
-	assert(chunkX >= CHUNK_POS_MIN_X && chunkX <= CHUNK_POS_MAX_X);
-	assert(chunkZ >= CHUNK_POS_MIN_Z && chunkZ <= CHUNK_POS_MAX_Z);
-
-	return ((u64)chunkX & KEY_CHUNK_POS_X_MASK) << (KEY_CHUNK_POS_X_BITS + KEY_STATE_BITS) |
-		((u64)chunkZ & KEY_CHUNK_POS_Z_MASK) << KEY_STATE_BITS;
-}
-
-#define INVALID_INDEX USHRT_MAX
+#define INVALID_INDEX ULONG_MAX
 
 struct ChunkNode {
 	u64 key;
@@ -45,10 +38,25 @@ struct ChunkCache {
 	struct ChunkNode data[];
 };
 
+static inline u64 nextpow2(u64 v) { // TODO find utility
+	if (v <= 0) return 0;
+
+	v--;
+	v |= v >> 1;
+	v |= v >> 2;
+	v |= v >> 3;
+	v |= v >> 4;
+	v |= v >> 16;
+	v |= v >> 32;
+	v++;
+
+	return v;
+}
+
 err_t chunkcache_create(size_t capacity, size_t highwater, struct ChunkCache **cacheout) {
-	if ((capacity & (capacity - 1)) != 0) return -1;				 // Capacity must be power of 2
-	if (highwater > capacity || highwater < capacity / 2) return -1; // highwater must be less then capacity but greater then half capacity.
-	if (cacheout == NULL) return -1;
+	assert(cacheout != NULL);
+	if (highwater == 0) return -1;
+	if (capacity != nextpow2(capacity)) return -1;
 
 	*cacheout = NULL;
 
@@ -78,12 +86,33 @@ err_t chunkcache_create(size_t capacity, size_t highwater, struct ChunkCache **c
 	return 0;
 }
 
+err_t chunkcache_resize(struct ChunkCache *cache, size_t highwater) {
+	assert(cache != NULL);
+	if (highwater == 0) return -1;
+
+	cache->highwater = highwater;
+
+	return 0;
+}
+
 void chunkcache_destroy(struct ChunkCache *cache) {
 	assert(cache != NULL);
 	assert(cache->size == 0);
 
 	free(cache);
 	cache = NULL;
+}
+
+bool chunkcache_drain(struct ChunkCache *cache) {
+	return cache->size > cache->highwater;
+}
+
+static inline u64 chunkcache_key(i64 chunkX, i64 chunkZ) {
+	assert(chunkX >= CHUNK_POS_MIN_X && chunkX <= CHUNK_POS_MAX_X);
+	assert(chunkZ >= CHUNK_POS_MIN_Z && chunkZ <= CHUNK_POS_MAX_Z);
+
+	return ((u64)chunkX & KEY_CHUNK_POS_X_MASK) << (KEY_CHUNK_POS_X_BITS + KEY_STATE_BITS) |
+		((u64)chunkZ & KEY_CHUNK_POS_Z_MASK) << KEY_STATE_BITS;
 }
 
 /**
@@ -102,21 +131,44 @@ static inline u64 key_preferred_index(u64 key, size_t mask) {
 	return hash & mask;
 }
 
+static inline u64 chunkcache_index_of(struct ChunkCache *cache, u64 key) {
+	assert(cache != NULL);
+
+	u64 preferred_index = key_preferred_index(key, cache->mask);
+	u64 index = preferred_index;
+
+	do {
+		struct ChunkNode *node = &cache->data[index];
+
+		u64 state = node->key & KEY_STATE_MASK;
+		if (state == KEY_STATE_FREE) break;
+
+		u64 current_key = node->key & ~KEY_STATE_MASK;
+		if (state == KEY_STATE_OCCUPIED && current_key == key) {
+			return index;
+		}
+
+		index = (index + 1) & cache->mask;
+	} while (index != preferred_index);
+
+	return INVALID_INDEX;
+}
+
 static inline void detach_index(struct ChunkCache *cache, u64 index) {
 	assert(cache != NULL);
 
 	struct ChunkNode *node = &cache->data[index];
 
-	if (node->prev != INVALID_INDEX) {
-		cache->data[node->prev].next = node->next;
-	} else {
+	if (node->prev == INVALID_INDEX) {
 		cache->head = node->next;
+	} else {
+		cache->data[node->prev].next = node->next;
 	}
 
-	if (node->next != INVALID_INDEX) {
-		cache->data[node->next].prev = node->prev;
-	} else {
+	if (node->next == INVALID_INDEX) {
 		cache->tail = node->prev;
+	} else {
+		cache->data[node->next].prev = node->prev;
 	}
 
 	node->prev = INVALID_INDEX;
@@ -142,35 +194,12 @@ static inline void attach_index_at_head(struct ChunkCache *cache, u64 index) {
 	}
 }
 
-static inline u64 get_key_index(struct ChunkCache *cache, u64 key) {
-	assert(cache != NULL);
-
-	u64 preferred_index = key_preferred_index(key, cache->mask);
-	u64 index = preferred_index;
-
-	do {
-		struct ChunkNode *node = &cache->data[index];
-
-		u64 state = node->key & KEY_STATE_MASK;
-		if (state == KEY_STATE_FREE) break;
-
-		u64 current_key = node->key & ~KEY_STATE_MASK;
-		if (state == KEY_STATE_OCCUPIED && current_key == key) {
-			return index;
-		}
-
-		index = (index + 1) & cache->mask;
-	} while (index != preferred_index);
-
-	return INVALID_INDEX;
-}
-
 struct Chunk *chunkcache_get(struct ChunkCache *cache, i64 chunkX, i64 chunkZ) {
 	assert(cache != NULL);
 	assert(chunkX >= CHUNK_POS_MIN_X && chunkX <= CHUNK_POS_MAX_X);
 	assert(chunkZ >= CHUNK_POS_MIN_Z && chunkZ <= CHUNK_POS_MAX_Z);
 
-	u64 index = get_key_index(cache, chunkcache_key(chunkX, chunkZ));
+	u64 index = chunkcache_index_of(cache, chunkcache_key(chunkX, chunkZ));
 	if (index == INVALID_INDEX) {
 		return NULL;
 	}
@@ -217,7 +246,7 @@ static inline struct Chunk *chunkcache_remove_index(struct ChunkCache *cache, u6
 static inline struct Chunk *chunkcache_remove_key(struct ChunkCache *cache, u64 key) {
 	assert(cache != NULL);
 
-	u64 index = get_key_index(cache, key);
+	u64 index = chunkcache_index_of(cache, key);
 	if (index == INVALID_INDEX) {
 		return NULL;
 	}
@@ -229,7 +258,7 @@ struct Chunk *chunkcache_remove(struct ChunkCache *cache, i64 chunkX, i64 chunkZ
 	return chunkcache_remove_key(cache, chunkcache_key(chunkX, chunkZ));
 }
 
-struct Chunk *chunkcache_add(struct ChunkCache *cache, i64 chunkX, i64 chunkZ, struct Chunk *chunkin) {
+void chunkcache_add(struct ChunkCache *cache, i64 chunkX, i64 chunkZ, struct Chunk *chunkin) {
 	assert(cache != NULL);
 	assert(chunkX >= CHUNK_POS_MIN_X && chunkX <= CHUNK_POS_MAX_X);
 	assert(chunkZ >= CHUNK_POS_MIN_Z && chunkZ <= CHUNK_POS_MAX_Z);
@@ -237,14 +266,9 @@ struct Chunk *chunkcache_add(struct ChunkCache *cache, i64 chunkX, i64 chunkZ, s
 
 	u64 key = chunkcache_key(chunkX, chunkZ);
 
-	u64 existing_index = get_key_index(cache, key);
+	u64 existing_index = chunkcache_index_of(cache, key);
 	if (existing_index != INVALID_INDEX) {
-		return NULL; // Cache entry already exists.
-	}
-
-	struct Chunk *evicted = NULL;
-	if (cache->size + 1 > cache->highwater) {
-		evicted = chunkcache_remove_index(cache, cache->tail);
+		return; // Cache entry already exists.
 	}
 
 	u64 preferred_index = key_preferred_index(key, cache->mask);
@@ -265,8 +289,6 @@ struct Chunk *chunkcache_add(struct ChunkCache *cache, i64 chunkX, i64 chunkZ, s
 	attach_index_at_head(cache, index);
 
 	cache->size++;
-
-	return evicted;
 }
 
 struct Chunk *chunkcache_remove_oldest(struct ChunkCache *cache) {

@@ -17,10 +17,12 @@
 #define CHUNK_MESH_FLAG		  (1 << 1) /* Chunk needs reprocessed or meshed */
 #define CHUNK_RENDERABLE_FLAG (1 << 2) /* Chunk can be rendered */
 
-#define CHUNK_POS_MAX_X (INT_MAX / CHUNK_WIDTH)
 #define CHUNK_POS_MIN_X (INT_MIN / CHUNK_WIDTH)
-#define CHUNK_POS_MAX_Z (INT_MAX / CHUNK_WIDTH)
+#define CHUNK_POS_MAX_X (INT_MAX / CHUNK_WIDTH)
 #define CHUNK_POS_MIN_Z (INT_MIN / CHUNK_WIDTH)
+#define CHUNK_POS_MAX_Z (INT_MAX / CHUNK_WIDTH)
+
+#define CHUNK_RING_COUNT(radius) (radius * 8 + 8)
 
 struct ChunkPos {
 	i64 x;

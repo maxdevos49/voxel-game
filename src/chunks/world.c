@@ -124,18 +124,23 @@ err_t world_set_block(const struct World *world, i64 worldX, i64 worldY, i64 wor
 void world_preload(struct World *self, double blockX, double blockZ) {
 	assert(self != NULL);
 
-	chunkmanager_update(self->chunk_manager, self, blockX, blockZ, true);
-	chunkmanager_update(self->chunk_manager, self, blockX, blockZ, true); // twice for complete meshing
+	chunkmanager_preload(self->chunk_manager, blockX, blockZ);
 }
 
 void world_update(struct World *self, double blockX, double blockZ) {
 	assert(self != NULL);
 
-	chunkmanager_update(self->chunk_manager, self, blockX, blockZ, false);
+	chunkmanager_update(self->chunk_manager, blockX, blockZ);
 }
 
 void world_render(struct World *self, double blockX, double blockZ) {
 	assert(self != NULL);
 
 	chunkmanager_render(self->chunk_manager, blockX, blockZ);
+}
+
+void world_view_radius_set(struct World *self, u64 radius) {
+	assert(self != NULL);
+
+	chunkmanager_view_radius_set(self->chunk_manager, radius);
 }

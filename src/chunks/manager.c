@@ -8,6 +8,8 @@
 #include "generator.h"
 #include "render.h"
 
+#define MAX_VIEW_RADIUS 64
+
 struct ChunkManager {
 	u16 radius;
 	struct ChunkCache *cache;
@@ -30,6 +32,7 @@ static inline u64 nextpow2(u64 v) { // TODO move to a utility file.
 
 err_t chunkmanager_create(u16 radius, struct ChunkManager **selfout) {
 	if (selfout == NULL) return -1;
+	if (radius > MAX_VIEW_RADIUS) return -1;
 
 	*selfout = NULL;
 
@@ -42,12 +45,11 @@ err_t chunkmanager_create(u16 radius, struct ChunkManager **selfout) {
 	manager->radius = radius;
 	manager->cache = NULL;
 
-	size_t chunk_count = CHUNK_VIEW_AREA(radius) * 2;
-	size_t cache_size = nextpow2(chunk_count);
-	size_t highwater = cache_size * 0.6;
+	size_t cache_capacity = nextpow2(CHUNK_VIEW_AREA(MAX_VIEW_RADIUS) * 2);
+	size_t cache_view_highwater = CHUNK_VIEW_AREA(radius) + CHUNK_RING_COUNT(radius + 1) + CHUNK_RING_COUNT(radius + 2);
 
 	struct ChunkCache *cache = NULL;
-	if (chunkcache_create(cache_size, highwater, &cache) != 0) {
+	if (chunkcache_create(cache_capacity, cache_view_highwater, &cache) != 0) {
 		free(manager);
 		manager = NULL;
 		return -3;
@@ -74,16 +76,65 @@ void chunkmanager_destroy(struct ChunkManager *self) {
 	free(self);
 }
 
+void chunkmanager_view_radius_set(struct ChunkManager *self, u64 radius) {
+	assert(self != NULL);
+
+	size_t cache_view_highwater = CHUNK_VIEW_AREA(radius) + CHUNK_RING_COUNT(radius + 1) + CHUNK_RING_COUNT(radius + 2);
+	if (chunkcache_resize(self->cache, cache_view_highwater) == 0) {
+		self->radius = radius;
+	}
+}
+
 struct Chunk *chunkmanager_get(const struct ChunkManager *self, struct ChunkPos pos) {
 	assert(self != NULL);
 
 	return chunkcache_get(self->cache, pos.x, pos.z);
 }
 
-err_t chunkmanager_update(struct ChunkManager *self, struct World *world, double blockX, double blockZ, bool load_all) {
+err_t chunkmanager_preload(struct ChunkManager *self, double blockX, double blockZ) {
+	struct Chunk *chunk = NULL;
+	struct ChunkPos pos;
+	struct ChunkIterator it;
+
+	struct ChunkPos origin = chunk_position_at(blockX, blockZ);
+
+	it = chunkiterator_create(origin, self->radius);
+	while (chunkiterator_next(&it, &pos)) {
+		chunk_generate(pos.x, pos.z, &chunk);
+		chunkcache_add(self->cache, pos.x, pos.z, chunk);
+	}
+
+	it = chunkiterator_create(origin, self->radius);
+	while (chunkiterator_next(&it, &pos)) {
+		chunk = chunkcache_get(self->cache, pos.x, pos.z);
+		if (chunk == NULL) continue;
+
+		const struct Chunk *north_chunk = chunkcache_get(self->cache, pos.x, pos.z - 1);
+		const struct Chunk *north_east_chunk = chunkcache_get(self->cache, pos.x + 1, pos.z - 1);
+		const struct Chunk *east_chunk = chunkcache_get(self->cache, pos.x + 1, pos.z);
+		const struct Chunk *south_east_chunk = chunkcache_get(self->cache, pos.x + 1, pos.z + 1);
+		const struct Chunk *south_chunk = chunkcache_get(self->cache, pos.x, pos.z + 1);
+		const struct Chunk *south_west_chunk = chunkcache_get(self->cache, pos.x - 1, pos.z + 1);
+		const struct Chunk *west_chunk = chunkcache_get(self->cache, pos.x - 1, pos.z);
+		const struct Chunk *north_west_chunk = chunkcache_get(self->cache, pos.x - 1, pos.z - 1);
+
+		chunkrenderer_mesh(
+			chunk,
+			north_chunk,
+			north_east_chunk,
+			east_chunk,
+			south_east_chunk,
+			south_chunk,
+			south_west_chunk,
+			west_chunk,
+			north_west_chunk);
+	}
+
+	return 0;
+}
+
+err_t chunkmanager_update(struct ChunkManager *self, double blockX, double blockZ) {
 	assert(self != NULL);
-	assert(world != NULL);
-	(void)world;
 
 	size_t generate_limit = 4;
 	size_t mesh_limit = 4;
@@ -95,17 +146,12 @@ err_t chunkmanager_update(struct ChunkManager *self, struct World *world, double
 	while (chunkiterator_next(&it, &pos)) {
 		struct Chunk *chunk = chunkcache_get(self->cache, pos.x, pos.z);
 		if (chunk == NULL) {
-			if (generate_limit > 0 || load_all) {
+			if (generate_limit > 0) {
 				if (chunk_generate(pos.x, pos.z, &chunk) != 0) {
 					return -3;
 				}
 
-				struct Chunk *evicted = chunkcache_add(self->cache, pos.x, pos.z, chunk);
-				if (evicted != NULL) {
-					chunkrenderer_cleanup(evicted);
-					chunk_destroy(evicted);
-					evicted = NULL;
-				}
+				chunkcache_add(self->cache, pos.x, pos.z, chunk);
 
 				struct Chunk *north = chunkcache_get(self->cache, pos.x, pos.z - 1);
 				if (north != NULL) chunk_set_flag(north, CHUNK_MESH_FLAG);
@@ -134,7 +180,7 @@ err_t chunkmanager_update(struct ChunkManager *self, struct World *world, double
 				generate_limit--;
 			}
 		} else {
-			if (chunk_get_flag(chunk, CHUNK_MESH_FLAG) && (mesh_limit > 0 || load_all)) {
+			if (chunk_get_flag(chunk, CHUNK_MESH_FLAG) && (mesh_limit > 0)) {
 				const struct Chunk *north_chunk = chunkcache_get(self->cache, pos.x, pos.z - 1);
 				const struct Chunk *north_east_chunk = chunkcache_get(self->cache, pos.x + 1, pos.z - 1);
 				const struct Chunk *east_chunk = chunkcache_get(self->cache, pos.x + 1, pos.z);
@@ -157,6 +203,16 @@ err_t chunkmanager_update(struct ChunkManager *self, struct World *world, double
 
 				mesh_limit--;
 			}
+		}
+	}
+
+	struct Chunk *removed = NULL;
+	while (chunkcache_drain(self->cache)) {
+		removed = chunkcache_remove_oldest(self->cache);
+		if (removed != NULL) {
+			chunkrenderer_cleanup(removed);
+			chunk_destroy(removed);
+			removed = NULL;
 		}
 	}
 

@@ -6,12 +6,11 @@ struct BlockModel BlockModels[BLOCK_COUNT];
 static void compute_face_quad(
 	struct BlockModel *model,
 	enum Face face,
-	float x0, float y0, float z0,
-	float x1, float y1, float z1) {
+	u8 x0, u8 y0, u8 z0,
+	u8 x1, u8 y1, u8 z1) {
 	struct Quad *quad = &model->computed[face];
 
-
-	u32 data = (0 & 0x3) | (model->faces[face] << 2);
+	u8 data = model->faces[face] << 2;
 	switch (face) {
 	case TOP_FACE:
 		// -Y
@@ -70,13 +69,15 @@ static void compute_block_models(void) {
 	for (u32 i = 0; i < BLOCK_COUNT; i++) {
 		struct BlockModel *model = &BlockModels[i];
 
-		float x0 = model->from[0] / 16.0f;
-		float y0 = model->from[1] / 16.0f;
-		float z0 = model->from[2] / 16.0f;
+		// TODO reintroduce fractional block sizes once each chunk section is its own mesh
 
-		float x1 = model->to[0] / 16.0f;
-		float y1 = model->to[1] / 16.0f;
-		float z1 = model->to[2] / 16.0f;
+		u8 x0 = model->from[0] / 16.0f;
+		u8 y0 = model->from[1] / 16.0f;
+		u8 z0 = model->from[2] / 16.0f;
+
+		u8 x1 = model->to[0] / 16.0f;
+		u8 y1 = model->to[1] / 16.0f;
+		u8 z1 = model->to[2] / 16.0f;
 
 		for (u32 face = 0; face < FACE_COUNT; face++) {
 			compute_face_quad(
@@ -131,7 +132,7 @@ void blocks_init_registry(void) {
 
 	BlockModels[WATER_BLOCK] = (struct BlockModel){
 		.from = {0, 0, 0},
-		.to = {16, 15, 16},
+		.to = {16, 16, 16},
 		.faces = {
 			WATER_TEXTURE,
 			WATER_TEXTURE,
@@ -139,6 +140,54 @@ void blocks_init_registry(void) {
 			WATER_TEXTURE,
 			WATER_TEXTURE,
 			WATER_TEXTURE,
+		}};
+
+	BlockModels[SAND_BLOCK] = (struct BlockModel){
+		.from = {0, 0, 0},
+		.to = {16, 16, 16},
+		.faces = {
+			SAND_TEXTURE,
+			SAND_TEXTURE,
+			SAND_TEXTURE,
+			SAND_TEXTURE,
+			SAND_TEXTURE,
+			SAND_TEXTURE,
+		}};
+
+	BlockModels[BEDROCK_BLOCK] = (struct BlockModel){
+		.from = {0, 0, 0},
+		.to = {16, 16, 16},
+		.faces = {
+			BEDROCK_TEXTURE,
+			BEDROCK_TEXTURE,
+			BEDROCK_TEXTURE,
+			BEDROCK_TEXTURE,
+			BEDROCK_TEXTURE,
+			BEDROCK_TEXTURE,
+		}};
+
+	BlockModels[LOG_BLOCK] = (struct BlockModel){
+		.from = {0, 0, 0},
+		.to = {16, 16, 16},
+		.faces = {
+			[TOP_FACE] = LOG_END_TEXTURE,
+			[BOTTOM_FACE] = LOG_END_TEXTURE,
+			[NORTH_FACE] = LOG_SIDE_TEXTURE,
+			[EAST_FACE] = LOG_SIDE_TEXTURE,
+			[SOUTH_FACE] = LOG_SIDE_TEXTURE,
+			[WEST_FACE] = LOG_SIDE_TEXTURE,
+		}};
+
+	BlockModels[LEAF_BLOCK] = (struct BlockModel){
+		.from = {0, 0, 0},
+		.to = {16, 16, 16},
+		.faces = {
+			[TOP_FACE] = LEAF_TEXTURE,
+			[BOTTOM_FACE] = LEAF_TEXTURE,
+			[NORTH_FACE] = LEAF_TEXTURE,
+			[EAST_FACE] = LEAF_TEXTURE,
+			[SOUTH_FACE] = LEAF_TEXTURE,
+			[WEST_FACE] = LEAF_TEXTURE,
 		}};
 
 	compute_block_models();

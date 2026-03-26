@@ -1,4 +1,4 @@
-VERSION		= "0.0.2"
+VERSION		= "0.0.3-prealpha"
 BINARY		= voxel
 
 
@@ -34,7 +34,7 @@ profile:
 
 .PHONY: debug
 debug: CFLAGS += -O2 -fsanitize=address,undefined,signed-integer-overflow -g
-debug: CPPFLAGS += -DLOG_LEVEL=0 -DDEBUG
+debug: CPPFLAGS += -DLOG_LEVEL=0 -DDEBUG -DDEFAULT_VIEW_RADIUS=8
 debug: disable_crash_reporter bin/$(BINARY)
 
 

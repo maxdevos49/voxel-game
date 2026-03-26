@@ -11,6 +11,10 @@ enum BlockType {
 	DIRT_BLOCK,
 	GRASS_BLOCK,
 	WATER_BLOCK,
+	SAND_BLOCK,
+	BEDROCK_BLOCK,
+	LOG_BLOCK,
+	LEAF_BLOCK,
 	BLOCK_COUNT,
 };
 
@@ -20,6 +24,11 @@ enum BlockTexture {
 	GRASS_TEXTURE,
 	GRASS_SIDE_TEXTURE,
 	WATER_TEXTURE,
+	SAND_TEXTURE,
+	BEDROCK_TEXTURE,
+	LOG_SIDE_TEXTURE,
+	LOG_END_TEXTURE,
+	LEAF_TEXTURE,
 	MISSING_TEXTURE,
 	BLOCK_TEXTURE_COUNT
 };
@@ -35,10 +44,10 @@ enum Face {
 };
 
 struct Vertex {
-	float x;
-	float y;
-	float z;
-	u32 data;
+	u8 x;
+	u8 y;
+	u8 z;
+	u8 data;
 };
 
 // Take some inspiration from: https://minecraft.wiki/w/Model

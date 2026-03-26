@@ -21,4 +21,6 @@ void world_preload(struct World *world, double blockX, double blockZ);
 void world_update(struct World *world, double blockX, double blockZ);
 void world_render(struct World *world, double blockX, double blockZ);
 
+void world_view_radius_set(struct World *world, u64 radius);
+
 #endif
